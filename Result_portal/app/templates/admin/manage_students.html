@@ -1,0 +1,11 @@
+<!-- Admin manage students template placeholder -->
+
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Manage Students</h2>
+  <form method="POST">
+    {{ form.hidden_tag() }}
+    {{ form.student_id.label }} {{ form.student_id() }}<br>
+    {{ form.submit() }}
+  </form>
+{% endblock %}
