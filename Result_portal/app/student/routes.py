@@ -32,15 +32,28 @@ def dashboard():
     latest_results = Result.query.filter_by(student_id=student.id)\
                                 .order_by(Result.academic_year.desc(), Result.semester.desc())\
                                 .limit(5).all()
-    
-    # Calculate overall GPA
-    overall_gpa = student.calculate_gpa()
-    
+
+    # Get current level and recent semester (if possible)
+    current_level = student.level
+    # Try to get the most recent semester for this level
+    recent_result = Result.query.filter_by(student_id=student.id, academic_year=current_level)\
+                                .order_by(Result.semester.desc()).first()
+    current_semester = recent_result.semester if recent_result else None
+
+    # Calculate GPA for current semester (if available)
+    semester_gpa = student.calculate_gpa_for_semester(current_semester, current_level) if current_semester else None
+    # Calculate CGPA for current level
+    level_cgpa = student.calculate_cgpa_for_year(current_level)
+    # Calculate true university-wide CGPA
+    overall_cgpa = student.calculate_overall_cgpa()
+
     return render_template('student/dashboard.html',
                          title='Student Dashboard',
                          student=student,
                          results=latest_results,
-                         gpa=overall_gpa)
+                         semester_gpa=semester_gpa,
+                         level_cgpa=level_cgpa,
+                         overall_cgpa=overall_cgpa)
 
 @bp.route('/results')
 @login_required

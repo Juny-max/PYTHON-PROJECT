@@ -62,31 +62,79 @@ class Student(db.Model):
     level = db.Column(db.String(20), nullable=False)
     archived = db.Column(db.Boolean, default=False, nullable=False)
     results = db.relationship('Result', backref='student', lazy=True)
-    
+
+    GRADE_POINTS = {
+        'A': 4.0,
+        'A-': 3.85,
+        'B+': 3.5,
+        'B': 3.0,
+        'C+': 2.5,
+        'C': 2.0,
+        'D': 1.5,
+        'E': 1.0,
+        'F': 0.0
+    }
+
+    def calculate_gpa_for_semester(self, semester, academic_year):
+        """
+        Calculate GPA for a specific semester and academic year.
+        Handles repeated courses (uses latest result), and skips missing grades.
+        """
+        # Get all results for this student, semester, and year
+        filtered = [r for r in self.results if str(r.semester) == str(semester) and str(r.academic_year) == str(academic_year) and r.grade]
+        # Handle repeated courses: keep only the latest result for each course
+        latest_results = {}
+        for r in sorted(filtered, key=lambda x: x.uploaded_at):
+            latest_results[r.course_id] = r
+        total_points = 0
+        total_credits = 0
+        for r in latest_results.values():
+            gp = self.GRADE_POINTS.get(r.grade, 0.0)
+            ch = r.course.credit_hours
+            total_points += gp * ch
+            total_credits += ch
+        return round(total_points / total_credits, 2) if total_credits else 0.0
+
+    def calculate_cgpa_for_year(self, academic_year, semesters=('1', '2')):
+        """
+        Calculate CGPA for an academic year as the average of semester GPAs.
+        """
+        gpas = []
+        for sem in semesters:
+            gpa = self.calculate_gpa_for_semester(sem, academic_year)
+            if gpa > 0:
+                gpas.append(gpa)
+        return round(sum(gpas) / len(gpas), 2) if gpas else 0.0
+
+    # Legacy method (for compatibility, not recommended for new code)
     def calculate_gpa(self, semester=None, academic_year=None):
-        results = self.results
-        if semester:
-            results = [r for r in results if r.semester == semester]
-        if academic_year:
-            results = [r for r in results if r.academic_year == academic_year]
-            
-        if not results:
+        if semester and academic_year:
+            return self.calculate_gpa_for_semester(semester, academic_year)
+        elif academic_year:
+            return self.calculate_cgpa_for_year(academic_year)
+        else:
             return 0.0
-            
-        total_credit_points = 0
-        total_credit_hours = 0
-        
-        grade_points = {
-            'A': 4.0, 'B+': 3.5, 'B': 3.0, 'C+': 2.5,
-            'C': 2.0, 'D+': 1.5, 'D': 1.0, 'F': 0.0
-        }
-        
-        for result in results:
-            points = grade_points.get(result.grade, 0.0)
-            total_credit_points += points * result.course.credit_hours
-            total_credit_hours += result.course.credit_hours
-        
-        return round(total_credit_points / total_credit_hours, 2) if total_credit_hours else 0.0
+
+    def calculate_overall_cgpa(self):
+        """
+        Calculate true cumulative CGPA (all levels/years/semesters),
+        using the weighted average of all grade points and credit hours.
+        Only the latest attempt for each course in each semester/year is used.
+        """
+        results = [r for r in self.results if r.grade]
+        # Use latest result for each (course, semester, academic_year)
+        latest_results = {}
+        for r in sorted(results, key=lambda x: x.uploaded_at):
+            key = (r.course_id, str(r.semester), str(r.academic_year))
+            latest_results[key] = r
+        total_points = 0
+        total_credits = 0
+        for r in latest_results.values():
+            gp = self.GRADE_POINTS.get(r.grade, 0.0)
+            ch = r.course.credit_hours
+            total_points += gp * ch
+            total_credits += ch
+        return round(total_points / total_credits, 2) if total_credits else 0.0
 
 class Course(db.Model):
     __tablename__ = 'courses'
@@ -115,18 +163,20 @@ class Result(db.Model):
         score = float(self.score)
         if score >= 80:
             return 'A'
-        elif score >= 75:
-            return 'B+'
         elif score >= 70:
-            return 'B'
+            return 'A-'
         elif score >= 65:
-            return 'C+'
+            return 'B+'
         elif score >= 60:
-            return 'C'
+            return 'B'
         elif score >= 55:
-            return 'D+'
+            return 'C+'
         elif score >= 50:
+            return 'C'
+        elif score >= 45:
             return 'D'
+        elif score >= 40:
+            return 'E'
         else:
             return 'F'
 

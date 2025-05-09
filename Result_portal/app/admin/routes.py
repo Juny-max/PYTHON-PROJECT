@@ -7,7 +7,7 @@ from datetime import datetime
 from app import db
 from app.admin import bp
 from app.admin.forms import UploadResultsForm, AddCourseForm
-from app.models import User, Student, Course, Result
+from app.models import db, User, Student, Course, Result
 from app.utils import allowed_file
 
 @bp.route('/audit_logs')
@@ -27,11 +27,18 @@ def dashboard():
     total_students = Student.query.count()
     total_courses = Course.query.count()
     recent_results = Result.query.order_by(Result.uploaded_at.desc()).limit(5).all()
+
+    # Get all programs and count of students per program (excluding archived)
+    program_counts = db.session.query(
+        Student.program, db.func.count(Student.id)
+    ).filter_by(archived=False).group_by(Student.program).all()
+
     return render_template('admin/dashboard.html', 
                          title='Admin Dashboard',
                          total_students=total_students,
                          total_courses=total_courses,
-                         recent_results=recent_results)
+                         recent_results=recent_results,
+                         program_counts=program_counts)
 
 
 @bp.route('/send_notification', methods=['GET', 'POST'])
