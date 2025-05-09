@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block title %}Welcome | Student Result Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 80vh;">
+    <div class="card shadow p-5" style="max-width: 400px; width: 100%;">
+        <h1 class="mb-4 text-center">Welcome to the Student Result Portal!</h1>
+        <p class="lead text-center mb-4">Easily manage and view student results online.</p>
+        <div class="d-flex flex-column gap-2">
+            <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-block mb-2">Login</a>
+            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-secondary btn-block">Register</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h2 class="mb-4">Manage Courses</h2>
+  <div class="mb-3 text-end">
+    <a href="{{ url_for('admin.add_course') }}" class="btn btn-success">Add New Course</a>
+  </div>
+  <table class="table table-bordered table-hover">
+    <thead class="table-light">
+      <tr>
+        <th>Course Code</th>
+        <th>Title</th>
+        <th>Credit Hours</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for course in courses %}
+      <tr>
+        <td>{{ course.code }}</td>
+        <td>{{ course.title }}</td>
+        <td>{{ course.credit_hours }}</td>
+        <td>
+          <a href="{{ url_for('admin.edit_course', course_id=course.id) }}" class="btn btn-sm btn-primary">Edit</a>
+          <a href="{{ url_for('admin.delete_course', course_id=course.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this course?');">Delete</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-center">No courses found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

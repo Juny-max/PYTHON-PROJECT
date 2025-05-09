@@ -1,0 +1,23 @@
+<!-- Student dashboard template placeholder -->
+
+{% extends 'base.html' %}
+{% block content %}
+  <h2 class="mb-4">Student Dashboard</h2>
+  <div class="card p-4 mb-4" style="max-width: 600px; margin: auto;">
+    <h4>Welcome, {{ current_user.username }}!</h4>
+    <div class="mb-3">
+      <a href="{{ url_for('student.notifications') }}" class="btn btn-warning">
+        Notifications
+        {% if unread_notifications_count and unread_notifications_count > 0 %}
+          <span class="badge bg-danger">{{ unread_notifications_count }}</span>
+        {% endif %}
+      </a>
+    </div>
+    <p><strong>Full Name:</strong> {{ current_user.student.full_name }}</p>
+    <p><strong>Index Number:</strong> {{ current_user.student.index_number }}</p>
+    <p><strong>Program:</strong> {{ current_user.student.program }}</p>
+    <p><strong>Level:</strong> {{ current_user.student.level }}</p>
+    <a href="{{ url_for('student.view_results') }}" class="btn btn-primary mt-3">View My Results</a>
+  </div>
+
+{% endblock %}

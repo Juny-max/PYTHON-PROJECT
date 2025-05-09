@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Notifications</h2>
+<table class="table table-bordered table-hover">
+  <thead class="table-light">
+    <tr>
+      <th>Date/Time</th>
+      <th>Message</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for notif in notifications %}
+    <tr{% if not notif.is_read %} class="table-warning"{% endif %}>
+      <td>{{ notif.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td>{{ notif.message }}</td>
+      <td>{% if notif.is_read %}Read{% else %}Unread{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="text-center">No notifications found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<a href="{{ url_for('student.dashboard') }}" class="btn btn-secondary">Back to Dashboard</a>
+{% endblock %}

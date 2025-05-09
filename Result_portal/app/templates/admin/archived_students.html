@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h2 class="mb-4">Archived Students</h2>
+  <table class="table table-bordered table-hover">
+    <thead class="table-light">
+      <tr>
+        <th>Index Number</th>
+        <th>Full Name</th>
+        <th>Program</th>
+        <th>Level</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for student in students %}
+      <tr>
+        <td>{{ student.index_number }}</td>
+        <td>{{ student.full_name }}</td>
+        <td>{{ student.program }}</td>
+        <td>{{ student.level }}</td>
+        <td>
+          <a href="{{ url_for('admin.delete_student', student_id=student.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Permanently delete this student?');">Delete Permanently</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-center">No archived students found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

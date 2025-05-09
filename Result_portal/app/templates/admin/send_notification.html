@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Send Notification to Student</h2>
+<form method="POST">
+  {{ form.hidden_tag() }}
+  <div class="form-group">
+    {{ form.student.label(class="form-label") }}
+    {{ form.student(class="form-select") }}
+  </div>
+  <div class="form-group">
+    {{ form.message.label(class="form-label") }}
+    {{ form.message(class="form-control", rows=4) }}
+  </div>
+  <button type="submit" class="btn btn-primary">Send Notification</button>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}
