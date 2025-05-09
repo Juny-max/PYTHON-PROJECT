@@ -1,35 +1,76 @@
 {% extends 'base.html' %}
 
 {% block content %}
-  <h2 class="mb-4">{% if editing %}Edit Result{% else %}Enter Student Result{% endif %}</h2>
-  <div class="card p-4" style="max-width: 600px; margin: auto;">
-    <form method="POST">
-      {{ form.hidden_tag() }}
-      <div class="form-group">
-        {{ form.index_number.label(class="form-label") }}
-        {{ form.index_number(class="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.course_code.label(class="form-label") }}
-        {{ form.course_code(class="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.score.label(class="form-label") }}
-        {{ form.score(class="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.semester.label(class="form-label") }}
-        {{ form.semester(class="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.academic_year.label(class="form-label") }}
-        {{ form.academic_year(class="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.remarks.label(class="form-label") }}
-        {{ form.remarks(class="form-control") }}
-      </div>
-      <button type="submit" class="btn btn-success btn-block mt-3">{% if editing %}Update Result{% else %}Submit Result{% endif %}</button>
-    </form>
-  </div>
+<h2 class="mb-4 text-center">{% if editing %}Edit Result{% else %}Enter Student Result{% endif %}</h2>
+<div class="card shadow-lg p-4" style="max-width: 600px; margin: auto;">
+  <form method="POST">
+    {{ form.hidden_tag() }}
+    <!-- Step 1: Program filter -->
+    <div class="mb-3">
+      <label for="program" class="form-label">Program</label>
+      <select name="program" id="program" class="form-select" onchange="this.form.submit()">
+        <option value="">Select Program</option>
+        {% for prog in programs %}
+          <option value="{{ prog }}" {% if selected_program == prog %}selected{% endif %}>{{ prog }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <!-- Step 2: Level filter -->
+    <div class="mb-3">
+      <label for="level" class="form-label">Level</label>
+      <select name="level" id="level" class="form-select" {% if not selected_program %}disabled{% endif %} onchange="this.form.submit()">
+        <option value="">Select Level</option>
+        {% for lvl in levels %}
+          <option value="{{ lvl }}" {% if selected_level == lvl %}selected{% endif %}>Level {{ lvl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <!-- Step 3: Student filter -->
+    <div class="mb-3">
+      <label for="index_number" class="form-label">Student</label>
+      <select name="index_number" id="index_number" class="form-select" {% if not selected_program or not selected_level %}disabled{% endif %} onchange="this.form.submit()">
+        <option value="">Select Student</option>
+        {% for val, label in form.index_number.choices %}
+          <option value="{{ val }}" {% if form.index_number.data == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Choose a student to auto-fill their program and courses.</div>
+      {% if selected_program and selected_level and form.index_number.choices|length == 0 %}
+        <div class="alert alert-warning mt-2">No students found for this program and level.</div>
+      {% endif %}
+    </div>
+    <!-- Step 4: Program display (readonly) -->
+    <div class="mb-3">
+      <label for="program_display" class="form-label">Program</label>
+      <input type="text" class="form-control" id="program_display" value="{{ program }}" readonly>
+    </div>
+    <!-- Step 5: Course selection -->
+    <div class="mb-3">
+      <label for="course_code" class="form-label">Course</label>
+      {% if courses and form.course_code.choices|length > 0 %}
+        {{ form.course_code(class="form-select") }}
+      {% else %}
+        <div class="alert alert-warning">No courses available for this student/program.</div>
+      {% endif %}
+    </div>
+    <!-- Step 6: Result details -->
+    <div class="mb-3">
+      {{ form.score.label(class="form-label") }}
+      {{ form.score(class="form-control") }}
+    </div>
+    <div class="mb-3">
+      {{ form.semester.label(class="form-label") }}
+      {{ form.semester(class="form-control") }}
+    </div>
+    <div class="mb-3">
+      {{ form.academic_year.label(class="form-label") }}
+      {{ form.academic_year(class="form-control") }}
+    </div>
+    <div class="mb-3">
+      {{ form.remarks.label(class="form-label") }}
+      {{ form.remarks(class="form-control") }}
+    </div>
+    <button type="submit" class="btn btn-success w-100 mt-3" {% if not form.index_number.data %}disabled{% endif %}>{% if editing %}Update Result{% else %}Submit Result{% endif %}</button>
+  </form>
+</div>
 {% endblock %}

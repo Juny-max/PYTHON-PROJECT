@@ -8,8 +8,9 @@ from wtforms import TextAreaField, SelectField
 
 
 class EnterResultForm(FlaskForm):
-    index_number = StringField('Student Index Number', validators=[DataRequired()])
-    course_code = StringField('Course Code', validators=[DataRequired()])
+    index_number = SelectField('Student Index Number', choices=[], validators=[DataRequired()])
+    program = StringField('Program', render_kw={'readonly': True})
+    course_code = SelectField('Course', choices=[], validators=[DataRequired()])
     score = FloatField('Score', validators=[DataRequired()])
     semester = StringField('Semester', validators=[DataRequired()])
     academic_year = StringField('Academic Year', validators=[DataRequired()])
@@ -35,6 +36,7 @@ class AddEditStudentForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired()])
     program = StringField('Program', validators=[DataRequired()])
     level = SelectField('Level', choices=[('100', '100'), ('200', '200'), ('300', '300'), ('400', '400')], validators=[DataRequired()])
+    username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Submit')
 

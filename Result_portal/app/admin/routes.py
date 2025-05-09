@@ -257,15 +257,49 @@ def add_course():
 def enter_result():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
-    
+
     from app.admin.forms import EnterResultForm
+    # Get all programs and levels
+    programs = [row[0] for row in db.session.query(Student.program).distinct().all()]
+    levels = ['100', '200', '300', '400']
+
+    # Get selected program/level/student from form or query params
+    selected_program = request.form.get('program') or request.args.get('program') or ''
+    selected_level = request.form.get('level') or request.args.get('level') or ''
+    selected_index = request.form.get('index_number') or request.args.get('index_number') or ''
+
+    # Filter students by program and level
+    students_query = Student.query.filter_by(archived=False)
+    if selected_program:
+        students_query = students_query.filter_by(program=selected_program)
+    if selected_level:
+        students_query = students_query.filter_by(level=selected_level)
+    filtered_students = students_query.order_by(Student.index_number).all()
+    student_choices = [(s.index_number, f"{s.index_number} - {s.full_name}") for s in filtered_students]
+
+    selected_student = Student.query.filter_by(index_number=selected_index).first() if selected_index else None
+    program = selected_student.program if selected_student else ''
+
+    # Show all courses for now (future: filter by level/program if Course model updated)
+    if selected_student:
+        courses = Course.query.order_by(Course.code).all()
+    else:
+        courses = []
+    course_choices = [(c.code, f"{c.code} - {c.title}") for c in courses]
+
+    # Build form
     form = EnterResultForm()
+    form.index_number.choices = student_choices
+    form.course_code.choices = course_choices
+    form.program.data = program
+
+    # If POST and valid, save result
     if form.validate_on_submit():
         student = Student.query.filter_by(index_number=form.index_number.data).first()
         course = Course.query.filter_by(code=form.course_code.data).first()
         if not student or not course:
             flash('Student or Course not found', 'danger')
-            return render_template('admin/enter_result.html', form=form)
+            return render_template('admin/enter_result.html', form=form, program=program, courses=course_choices, programs=programs, levels=levels, selected_program=selected_program, selected_level=selected_level)
         result = Result(
             student_id=student.id,
             course_id=course.id,
@@ -285,7 +319,15 @@ def enter_result():
         db.session.commit()
         flash('Result entered successfully!', 'success')
         return redirect(url_for('admin.enter_result'))
-    return render_template('admin/enter_result.html', form=form)
+
+    return render_template('admin/enter_result.html',
+        form=form,
+        program=program,
+        courses=course_choices,
+        programs=programs,
+        levels=levels,
+        selected_program=selected_program,
+        selected_level=selected_level)
 
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
@@ -330,18 +372,38 @@ def edit_result(result_id):
     form.remarks.data = result.remarks
     return render_template('admin/enter_result.html', form=form, editing=True)
 
-@bp.route('/view_results')
+@bp.route('/view_results', methods=['GET', 'POST'])
 @login_required
 def view_results():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
-    results = Result.query.order_by(Result.uploaded_at.desc()).all()
-    return render_template('admin/view_results.html', results=results)
+    # Get filter options
+    programs = [row[0] for row in db.session.query(Student.program).distinct().all()]
+    levels = ['100', '200', '300', '400']
 
+    # Get filter values from request
+    selected_program = request.args.get('program', '')
+    selected_level = request.args.get('level', '')
 
-import csv
-import io
-from flask import send_file, request
+    # Query students based on filters
+    students_query = Student.query.filter_by(archived=False)
+    if selected_program:
+        students_query = students_query.filter_by(program=selected_program)
+    if selected_level:
+        students_query = students_query.filter_by(level=selected_level)
+    students = students_query.all()
+
+    # Gather results for these students
+    student_ids = [s.id for s in students]
+    results = Result.query.filter(Result.student_id.in_(student_ids)).order_by(Result.academic_year.desc(), Result.semester.desc()).all()
+
+    return render_template('admin/view_results.html',
+        programs=programs,
+        levels=levels,
+        selected_program=selected_program,
+        selected_level=selected_level,
+        students=students,
+        results=results)
 
 @bp.route('/reports')
 @login_required
@@ -363,7 +425,8 @@ def reports():
         total_results=total_results,
         pass_rate=pass_rate,
         fail_rate=fail_rate,
-        grade_dist=grade_dist
+        grade_dist=grade_dist,
+        now=datetime.now()
     )
 
 @bp.route('/manage_students', methods=['GET', 'POST'])

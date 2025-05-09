@@ -182,6 +182,25 @@ If you close everything and want to start again:
 - Static files for CSS/JS
 - Ready-to-use templates for all major pages
 
+### Modern Admin Result Entry Workflow
+- **Step-by-step Filtering:** Admins now enter results using a multi-step process:
+  1. **Select Program**: Choose the student's program of study.
+  2. **Select Level**: Choose the academic level (100, 200, 300, 400).
+  3. **Select Student**: Only students in the chosen program and level are shown.
+  4. **Select Course**: Courses are shown after a student is selected.
+  5. **Enter Result Details**: Fill in score, semester, academic year, and remarks.
+- **Modern Professional UI:** The form is responsive, visually clear, and disables fields until prerequisites are selected, preventing errors and confusion.
+- **Scalable for Large Institutions:** The filtering workflow ensures admins can efficiently locate the right student and course, even in large datasets.
+
+#### Usage Example (Admin Result Entry)
+1. Go to the **Enter Result** page in the admin dashboard.
+2. Select a Program. The Level dropdown is enabled.
+3. Select a Level. The Student dropdown is enabled and only shows students in that program & level.
+4. Select a Student. The Course dropdown is enabled.
+5. Enter the result details and submit.
+
+If no students or courses are available for the selected filters, the system will notify you.
+
 ## .env.example
 
 A `.env.example` file is included for sharing the required environment variable structure. Copy it to `.env` and fill in your secrets.
