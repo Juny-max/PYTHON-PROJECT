@@ -1,8 +1,16 @@
 <!-- Admin dashboard template placeholder -->
 {% extends 'base.html' %}
 {% block content %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// Ensure dropdowns work in custom sidebars
+window.addEventListener('DOMContentLoaded', function() {
+  var dropdownElements = [].slice.call(document.querySelectorAll('.dropdown-toggle'));
+  dropdownElements.map(function (dropdownToggleEl) {
+    return new bootstrap.Dropdown(dropdownToggleEl);
+  });
+});
+</script>
 <style>
   body { background: #f4f8fb; }
   .admin-layout { min-height: 100vh; }
@@ -24,6 +32,18 @@
     margin: 0;
     border-radius: 0;
     box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+  }
+  /* --- Fix for sidebar dropdown --- */
+  .admin-sidebar .dropdown-menu {
+    position: absolute !important;
+    left: 0;
+    top: 100%;
+    min-width: 220px;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+  .admin-sidebar .dropdown.show .dropdown-menu {
+    display: block;
   }
   .admin-sidebar .sidebar-title { font-size: 1.4rem; font-weight: bold; margin-bottom: 1.5rem; color: #0dcaf0; letter-spacing: 1px; }
   .admin-sidebar .nav-link, .admin-sidebar .dropdown-toggle {
@@ -110,9 +130,11 @@
     <hr style="border-color: #444;">
     <a href="{{ url_for('admin.manage_students') }}" class="nav-link"><i class="bi bi-people"></i>Manage Students</a>
     <a href="{{ url_for('admin.manage_courses') }}" class="nav-link"><i class="bi bi-journal-bookmark"></i>Manage Courses</a>
-    <div class="dropdown">
-      <a class="nav-link dropdown-toggle" href="#" role="button" id="resultsDropdown" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-award"></i>Results</a>
-      <ul class="dropdown-menu" aria-labelledby="resultsDropdown">
+    <div class="dropdown position-relative">
+      <a class="nav-link dropdown-toggle w-100 text-start" href="#" id="resultsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-award"></i> Results
+      </a>
+      <ul class="dropdown-menu w-100" aria-labelledby="resultsDropdown">
         <li><a class="dropdown-item" href="{{ url_for('admin.upload_results') }}">Upload Results</a></li>
         <li><a class="dropdown-item" href="{{ url_for('admin.view_results') }}">View Results</a></li>
         <li><a class="dropdown-item" href="{{ url_for('admin.enter_result') }}">Enter Result</a></li>

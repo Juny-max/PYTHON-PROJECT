@@ -20,7 +20,12 @@
         <td>{{ student.program }}</td>
         <td>{{ student.level }}</td>
         <td>
-          <a href="{{ url_for('admin.delete_student', student_id=student.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Permanently delete this student?');">Delete Permanently</a>
+            <form method="post" action="{{ url_for('admin.restore_student', student_id=student.id) }}" style="display:inline;" class="action-form">
+              <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#confirmActionModal" data-action-url="{{ url_for('admin.restore_student', student_id=student.id) }}" data-action-message="Restore this student?" data-action-title="Restore Student" data-action-icon="bi-arrow-clockwise">Restore</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.delete_student', student_id=student.id) }}" style="display:inline;" class="action-form">
+              <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#confirmActionModal" data-action-url="{{ url_for('admin.delete_student', student_id=student.id) }}" data-action-message="Delete this student permanently?" data-action-title="Delete Student" data-action-icon="bi-trash">Delete</button>
+            </form>
         </td>
       </tr>
       {% else %}

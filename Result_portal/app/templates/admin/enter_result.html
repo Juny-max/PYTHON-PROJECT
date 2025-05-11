@@ -11,7 +11,7 @@
       <select name="program" id="program" class="form-select" onchange="this.form.submit()">
         <option value="">Select Program</option>
         {% for prog in programs %}
-          <option value="{{ prog }}" {% if selected_program == prog %}selected{% endif %}>{{ prog }}</option>
+          <option value="{{ prog.id }}" {% if selected_program == prog.id|string %}selected{% endif %}>{{ prog.name }}</option>
         {% endfor %}
       </select>
     </div>

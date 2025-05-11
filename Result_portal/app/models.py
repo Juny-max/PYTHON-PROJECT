@@ -136,6 +136,20 @@ class Student(db.Model):
             total_credits += ch
         return round(total_points / total_credits, 2) if total_credits else 0.0
 
+# Association table for many-to-many relationship between Program and Course
+program_courses = db.Table('program_courses',
+    db.Column('program_id', db.Integer, db.ForeignKey('programs.id'), primary_key=True),
+    db.Column('course_id', db.Integer, db.ForeignKey('courses.id'), primary_key=True)
+)
+
+class Program(db.Model):
+    __tablename__ = 'programs'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.String(255))
+    archived = db.Column(db.Boolean, default=False, nullable=False)
+    courses = db.relationship('Course', secondary=program_courses, back_populates='programs')
+
 class Course(db.Model):
     __tablename__ = 'courses'
     
@@ -144,6 +158,7 @@ class Course(db.Model):
     title = db.Column(db.String(100), nullable=False)
     credit_hours = db.Column(db.Integer, nullable=False)
     results = db.relationship('Result', backref='course', lazy=True)
+    programs = db.relationship('Program', secondary=program_courses, back_populates='courses')
 
 class Result(db.Model):
     __tablename__ = 'results'

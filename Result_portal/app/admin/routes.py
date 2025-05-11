@@ -185,7 +185,149 @@ def manage_courses():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
     courses = Course.query.all()
-    return render_template('admin/manage_courses.html', title='Manage Courses', courses=courses)
+    return render_template('admin/manage_courses.html', title='Manage Courses', courses=courses, show_programs=False)
+
+@bp.route('/manage_programs', defaults={'program_id': None})
+@bp.route('/manage_programs/<int:program_id>')
+@login_required
+def manage_programs(program_id=None):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program, Course, Student
+    programs = Program.query.filter_by(archived=False).all()
+    archived_programs = Program.query.filter_by(archived=True).all()
+    all_courses = Course.query.all()
+    selected_program = Program.query.get(program_id) if program_id else None
+    # Find unique student programs not yet in Program table
+    student_programs = set([s.program for s in Student.query.with_entities(Student.program).distinct() if s.program])
+    program_names = set([p.name for p in programs] + [p.name for p in archived_programs])
+    missing_programs = sorted(list(student_programs - program_names))
+    return render_template('admin/manage_courses.html', title='Manage Programs',
+                           show_programs=True, programs=programs, archived_programs=archived_programs,
+                           selected_program=selected_program, all_courses=all_courses,
+                           missing_programs=missing_programs)
+
+@bp.route('/import_student_program', methods=['POST'])
+@login_required
+def import_student_program():
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    name = request.form.get('import_program_name')
+    if name:
+        program = Program(name=name)
+        db.session.add(program)
+        db.session.commit()
+        flash(f'Imported program "{name}" from students.', 'success')
+    else:
+        flash('No program name provided.', 'danger')
+    return redirect(url_for('admin.manage_programs'))
+
+@bp.route('/edit_program/<int:program_id>', methods=['GET', 'POST'])
+@login_required
+def edit_program(program_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    program = Program.query.get_or_404(program_id)
+    if request.method == 'POST':
+        name = request.form.get('edit_program_name')
+        description = request.form.get('edit_program_description')
+        if name:
+            program.name = name
+            program.description = description
+            db.session.commit()
+            flash('Program updated successfully!', 'success')
+            return redirect(url_for('admin.manage_programs', program_id=program_id))
+        else:
+            flash('Program name is required.', 'danger')
+    return render_template('admin/edit_program.html', program=program)
+
+@bp.route('/add_program', methods=['POST'])
+@login_required
+def add_program():
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    name = request.form.get('name')
+    description = request.form.get('description')
+    if name:
+        program = Program(name=name, description=description)
+        db.session.add(program)
+        db.session.commit()
+        flash('Program added successfully!', 'success')
+    else:
+        flash('Program name is required.', 'danger')
+    return redirect(url_for('admin.manage_programs'))
+
+@bp.route('/delete_program/<int:program_id>', methods=['POST'])
+@login_required
+def delete_program(program_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    program = Program.query.get_or_404(program_id)
+    db.session.delete(program)
+    db.session.commit()
+    flash('Program deleted successfully!', 'success')
+    return redirect(url_for('admin.manage_programs'))
+
+@bp.route('/archive_program/<int:program_id>', methods=['POST'])
+@login_required
+def archive_program(program_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    program = Program.query.get_or_404(program_id)
+    program.archived = True
+    db.session.commit()
+    flash('Program archived successfully!', 'success')
+    return redirect(url_for('admin.manage_programs'))
+
+@bp.route('/restore_program/<int:program_id>', methods=['POST'])
+@login_required
+def restore_program(program_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program
+    program = Program.query.get_or_404(program_id)
+    program.archived = False
+    db.session.commit()
+    flash('Program restored successfully!', 'success')
+    return redirect(url_for('admin.manage_programs'))
+
+@bp.route('/add_course_to_program/<int:program_id>', methods=['POST'])
+@login_required
+def add_course_to_program(program_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program, Course
+    program = Program.query.get_or_404(program_id)
+    course_id = request.form.get('course_id')
+    course = Course.query.get(course_id)
+    if course and course not in program.courses:
+        program.courses.append(course)
+        db.session.commit()
+        flash('Course added to program.', 'success')
+    else:
+        flash('Invalid course selection or course already assigned.', 'danger')
+    return redirect(url_for('admin.manage_programs', program_id=program_id))
+
+@bp.route('/remove_course_from_program/<int:program_id>/<int:course_id>', methods=['POST'])
+@login_required
+def remove_course_from_program(program_id, course_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    from app.models import Program, Course
+    program = Program.query.get_or_404(program_id)
+    course = Course.query.get_or_404(course_id)
+    if course in program.courses:
+        program.courses.remove(course)
+        db.session.commit()
+        flash('Course removed from program.', 'success')
+    else:
+        flash('Course not assigned to program.', 'danger')
+    return redirect(url_for('admin.manage_programs', program_id=program_id))
 
 @bp.route('/edit_course/<int:course_id>', methods=['GET', 'POST'])
 @login_required
@@ -232,9 +374,14 @@ def delete_course(course_id):
 def add_course():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
-    
+    from app.models import Program, Course, AuditLog
+    programs = Program.query.filter_by(archived=False).all()
     form = AddCourseForm()
-    if form.validate_on_submit():
+    if request.method == 'POST':
+        program_id = request.form.get('program_id')
+        if not program_id or program_id == '':
+            flash('You must select a program before adding a course.', 'danger')
+            return render_template('admin/add_course.html', title='Add Course', form=form, programs=programs, selected_program_id=program_id)
         course = Course(
             code=form.course_code.data,
             title=form.course_title.data,
@@ -242,15 +389,18 @@ def add_course():
         )
         db.session.add(course)
         db.session.commit()
+        # Assign course to program
+        program = Program.query.get(int(program_id))
+        if program:
+            program.courses.append(course)
+            db.session.commit()
         # Log audit
-        from app.models import AuditLog
-        log = AuditLog(admin_id=current_user.id, action='Add Course', target_type='Course', target_id=course.id, details=f'Added course {course.title} ({course.code})')
+        log = AuditLog(admin_id=current_user.id, action='Add Course', target_type='Course', target_id=course.id, details=f'Added course {course.title} ({course.code}) to program {program.name if program else "Unknown"}')
         db.session.add(log)
         db.session.commit()
         flash('Course added successfully!', 'success')
         return redirect(url_for('admin.manage_courses'))
-    
-    return render_template('admin/add_course.html', title='Add Course', form=form)
+    return render_template('admin/add_course.html', title='Add Course', form=form, programs=programs, selected_program_id=None)
 
 @bp.route('/enter_result', methods=['GET', 'POST'])
 @login_required
@@ -260,7 +410,8 @@ def enter_result():
 
     from app.admin.forms import EnterResultForm
     # Get all programs and levels
-    programs = [row[0] for row in db.session.query(Student.program).distinct().all()]
+    from app.models import Program
+    programs = Program.query.filter_by(archived=False).all()
     levels = ['100', '200', '300', '400']
 
     # Get selected program/level/student from form or query params
@@ -268,17 +419,24 @@ def enter_result():
     selected_level = request.form.get('level') or request.args.get('level') or ''
     selected_index = request.form.get('index_number') or request.args.get('index_number') or ''
 
-    # Filter students by program and level
+    # Filter students by program ID and level
     students_query = Student.query.filter_by(archived=False)
     if selected_program:
-        students_query = students_query.filter_by(program=selected_program)
+        # Find the selected program object by ID
+        selected_program_obj = next((p for p in programs if str(p.id) == str(selected_program)), None)
+        selected_program_name = selected_program_obj.name if selected_program_obj else ''
+        students_query = students_query.filter_by(program=selected_program_name)
+    else:
+        selected_program_obj = None
+        selected_program_name = ''
     if selected_level:
         students_query = students_query.filter_by(level=selected_level)
     filtered_students = students_query.order_by(Student.index_number).all()
     student_choices = [(s.index_number, f"{s.index_number} - {s.full_name}") for s in filtered_students]
 
     selected_student = Student.query.filter_by(index_number=selected_index).first() if selected_index else None
-    program = selected_student.program if selected_student else ''
+    # Show the program name in the readonly input
+    program = selected_program_obj.name if selected_program_obj else (selected_student.program if selected_student else '')
 
     # Show all courses for now (future: filter by level/program if Course model updated)
     if selected_student:
@@ -370,7 +528,18 @@ def edit_result(result_id):
     form.semester.data = result.semester
     form.academic_year.data = result.academic_year
     form.remarks.data = result.remarks
-    return render_template('admin/enter_result.html', form=form, editing=True)
+    from app.models import Program
+    return render_template(
+    'admin/enter_result.html',
+    form=form,
+    editing=True,
+    programs=Program.query.filter_by(archived=False).all(),
+    levels=['100', '200', '300', '400'],
+    selected_program='',  # You can set this to the correct program id if available
+    selected_level=result.student.level if hasattr(result.student, 'level') else '',
+    program=result.student.program if hasattr(result.student, 'program') else '',
+    courses=[(result.course.code, f"{result.course.code} - {result.course.title}")] if result.course else [],
+)
 
 @bp.route('/view_results', methods=['GET', 'POST'])
 @login_required
@@ -378,7 +547,8 @@ def view_results():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
     # Get filter options
-    programs = [row[0] for row in db.session.query(Student.program).distinct().all()]
+    from app.models import Program
+    programs = Program.query.filter_by(archived=False).all()
     levels = ['100', '200', '300', '400']
 
     # Get filter values from request
@@ -668,7 +838,18 @@ def view_login_history(student_id):
     history = LoginHistory.query.filter_by(user_id=student.user_id).order_by(LoginHistory.timestamp.desc()).all()
     return render_template('admin/login_history.html', student=student, history=history)
 
-@bp.route('/delete_student/<int:student_id>')
+@bp.route('/restore_student/<int:student_id>', methods=['POST'])
+@login_required
+def restore_student(student_id):
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    student = Student.query.get_or_404(student_id)
+    student.archived = False
+    db.session.commit()
+    flash('Student restored successfully.', 'success')
+    return redirect(url_for('admin.archived_students'))
+
+@bp.route('/delete_student/<int:student_id>', methods=['POST'])
 @login_required
 def delete_student(student_id):
     if not current_user.is_admin():
