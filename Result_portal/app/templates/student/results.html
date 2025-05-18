@@ -7,58 +7,68 @@
   <div class="row">
     <div class="col-md-12">
         <h2 class="mb-4">My Academic Results</h2>
-        
-        {% for semester, data in semester_results.items() %}
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    {{ semester }} Semester
-                    <span class="badge badge-light float-right">GPA: {{ data.gpa }}</span>
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped table-hover">
-                        <thead class="thead-light">
-                            <tr>
-                                <th>Course Code</th>
-                                <th>Course Title</th>
-                                <th>Credit Hours</th>
-                                <th>Score</th>
-                                <th>Grade</th>
-                                <th>Remarks</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for result in data.results %}
-                            <tr>
-                                <td>{{ result.course.code }}</td>
-                                <td>{{ result.course.title }}</td>
-                                <td>{{ result.course.credit_hours }}</td>
-                                <td>{{ result.score }}</td>
-                                <td>
-                                    <span class="badge 
-                                        {% if result.grade == 'A' %}badge-success
-                                        {% elif result.grade in ['B+', 'B'] %}badge-primary
-                                        {% elif result.grade in ['C+', 'C'] %}badge-warning
-                                        {% elif result.grade in ['D+', 'D'] %}badge-secondary
-                                        {% else %}badge-danger{% endif %}">
-                                        {{ result.grade }}
-                                    </span>
-                                </td>
-                                <td>{{ result.remarks or '-' }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        {% if display_results and display_results|length > 0 %}
+            {% for group in display_results %}
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        Level {{ group.level }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% for sem in group.semesters %}
+                    <div class="mb-4">
+                        <div class="bg-info text-white px-3 py-2 rounded mb-2 d-flex justify-content-between align-items-center">
+                            <span>
+                                {% if sem.semester == '1' or sem.semester == 'First' %}First Semester{% elif sem.semester == '2' or sem.semester == 'Second' %}Second Semester{% else %}Semester {{ sem.semester }}{% endif %}
+                            </span>
+                            <span class="badge bg-light text-dark">GPA: {{ sem.gpa }}</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th>Course Code</th>
+                                        <th>Course Title</th>
+                                        <th>Credit Hours</th>
+                                        <th>Score</th>
+                                        <th>Grade</th>
+                                        <th>Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for result in sem.results %}
+                                    <tr>
+                                        <td>{{ result.course.code }}</td>
+                                        <td>{{ result.course.title }}</td>
+                                        <td>{{ result.course.credit_hours }}</td>
+                                        <td>{{ result.score }}</td>
+                                        <td>
+                                            <span class="badge 
+                                                {% if result.grade == 'A' %}bg-success
+                                                {% elif result.grade in ['B+', 'B'] %}bg-primary
+                                                {% elif result.grade in ['C+', 'C'] %}bg-warning text-dark
+                                                {% elif result.grade in ['D+', 'D'] %}bg-secondary
+                                                {% else %}bg-danger{% endif %}">
+                                                {{ result.grade }}
+                                            </span>
+                                        </td>
+                                        <td>{{ result.remarks or '-' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
-        </div>
+            {% endfor %}
         {% else %}
         <div class="alert alert-info">
             No results found for your account.
         </div>
-        {% endfor %}
+        {% endif %}
     </div>
 </div>
 {% endblock %}

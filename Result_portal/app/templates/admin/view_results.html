@@ -8,7 +8,7 @@
       <select id="program" name="program" class="form-select">
         <option value="">All Programs</option>
         {% for prog in programs %}
-          <option value="{{ prog }}" {% if selected_program == prog %}selected{% endif %}>{{ prog }}</option>
+          <option value="{{ prog.name }}" {% if selected_program == prog.name %}selected{% endif %}>{{ prog.name }}</option>
         {% endfor %}
       </select>
     </div>

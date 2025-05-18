@@ -60,8 +60,8 @@
     <div class="profile-grid">
       <div><span class="fw-bold"><i class="bi bi-person-badge"></i> Full Name:</span><br>{{ current_user.student.full_name }}</div>
       <div><span class="fw-bold"><i class="bi bi-hash"></i> Index Number:</span><br>{{ current_user.student.index_number }}</div>
-      <div><span class="fw-bold"><i class="bi bi-journal-bookmark"></i> Program:</span><br>{{ current_user.student.program }}</div>
-      <div><span class="fw-bold"><i class="bi bi-layers"></i> Level:</span><br>{{ current_user.student.level }}</div>
+      <div><span class="fw-bold"><i class="bi bi-journal-bookmark"></i> Program:</span><br>{{ current_user.student.program.name }}</div>
+      <div><span class="fw-bold"><i class="bi bi-layers"></i> Level:</span><br>{{ current_user.student.level.name }}</div>
     </div>
 
     <div class="mt-4">

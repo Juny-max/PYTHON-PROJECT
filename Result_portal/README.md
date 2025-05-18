@@ -45,6 +45,28 @@ student_result_portal/
 └── run.py
 ```
 
+## Database Structure
+
+- MySQL database with proper relationships
+- Tables for:
+  - Users (Admin/Student)
+  - Students
+  - Results
+  - Courses
+  - Programs
+  - Audit Logs
+  - Notifications
+  - Messages
+  - Reports
+
+### Key Database Features
+- GPA calculations
+- Level-based CGPA tracking
+- Semester-based result management
+- Program and course relationships
+- User authentication data
+- Audit trail for admin actions
+
 ## Setup Instructions
 
 This guide will help you set up and use the Student Result Portal, even if you close everything and want to start again later. Each step is explained for clarity.
@@ -175,12 +197,26 @@ If you close everything and want to start again:
 ---
 
 ## Features
-- Modular Flask blueprints for auth, admin, and student logic
-- WTForms for secure form handling
-- Environment variable management with `.env` files
-- Professional folder structure for scalability
-- Static files for CSS/JS
-- Ready-to-use templates for all major pages
+
+- Secure user authentication (login/logout)
+- Role-based access control (Admin/Student)
+- Student profile management
+- Course and program management
+- Result upload and management
+- Student dashboard with GPA calculations
+- Admin dashboard with student management
+- Secure file uploads for results
+- Audit logging for admin actions
+- Professional UI/UX with:
+  - Modern gradient backgrounds
+  - Animated floating shapes
+  - Consistent iconography
+  - Responsive design
+  - Clean, centered layouts
+  - Subtle footer on main pages
+  - Modern card designs with shadows
+  - Bootstrap 5 with custom styling
+  - Smooth animations and transitions for all major pages
 
 ### Modern Admin Result Entry Workflow
 - **Step-by-step Filtering:** Admins now enter results using a multi-step process:
