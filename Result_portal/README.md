@@ -181,7 +181,48 @@ If you close everything and want to start again:
 
 ---
 
-### 8. Accessing Routes
+### 8. Create an Admin Account
+To create an admin account, you'll need to run a Python script in the Flask shell. Follow these steps:
+
+1. Make sure your virtual environment is activated and all dependencies are installed.
+2. Set the Flask app environment variable if you haven't already:
+   ```bash
+   # On Windows CMD:
+   set FLASK_APP=app:create_app
+   
+   # On PowerShell:
+   $env:FLASK_APP = "app:create_app"
+   
+   # On macOS/Linux:
+   export FLASK_APP=app:create_app
+   ```
+3. Open the Flask shell by running:
+   ```bash
+   python -m flask shell
+   ```
+4. In the Flask shell, copy and paste the following code (make sure to replace `your_secure_password` with a strong password):
+   ```python
+   from app import create_app, db
+   from app.models import User
+   from werkzeug.security import generate_password_hash
+
+   app = create_app()
+   with app.app_context():
+       admin = User(
+           username='admin',
+           email='admin@example.com',
+           password_hash=generate_password_hash('your_secure_password', method='pbkdf2:sha256'),
+           user_type='admin'
+       )
+       db.session.add(admin)
+       db.session.commit()
+       print("Admin account created successfully!")
+   ```
+5. Type `exit()` to exit the Flask shell.
+
+You can now log in to the admin dashboard using the credentials you just created.
+
+### 9. Accessing Routes
 - Home: `/`
 - Auth: `/auth/login`, `/auth/register`
 - Admin: `/admin/dashboard`
