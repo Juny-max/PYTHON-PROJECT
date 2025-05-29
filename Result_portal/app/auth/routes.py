@@ -1,10 +1,11 @@
-from flask import render_template, flash, redirect, url_for, request
-from flask_login import login_user, logout_user, current_user
+from flask import render_template, flash, redirect, url_for, request, current_app
+from flask_login import login_user, logout_user, current_user, login_required
 from urllib.parse import urlparse
+from werkzeug.security import generate_password_hash
 from app import db
 from app.auth import bp
-from app.auth.forms import LoginForm, RegistrationForm
-from app.models import User, Student
+from app.auth.forms import LoginForm, RegistrationForm, ChangePasswordForm
+from app.models import User, Student, AuditLog
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -33,9 +34,14 @@ def login():
         login_record = LoginHistory(user_id=user.id, ip_address=request.remote_addr)
         db.session.add(login_record)
         db.session.commit()
+        
+        # Redirect to password change if it's the first login
+        if not user.password_changed and not user.is_admin():
+            return redirect(url_for('auth.change_password'))
+            
         next_page = request.args.get('next')
         if not next_page or urlparse(next_page).netloc != '':
-            # Redirect students to their dashboard
+            # Redirect users to their respective dashboards
             if user.is_admin():
                 next_page = url_for('admin.dashboard')
             else:
@@ -84,9 +90,42 @@ def register():
         db.session.add(student)
         db.session.commit()
         flash('Congratulations, you are now a registered student!', 'success')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('index'))
     
     return render_template('auth/register.html', title='Register', form=form)
+
+@bp.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if current_user.password_changed:
+        return redirect(url_for('index'))
+        
+    form = ChangePasswordForm()
+    if form.validate_on_submit():
+        # Verify current password
+        if not current_user.check_password(form.current_password.data):
+            flash('Incorrect temporary password. Please try again.', 'danger')
+            return redirect(url_for('auth.change_password'))
+            
+        # Update password
+        current_user.password_hash = generate_password_hash(form.new_password.data, method='pbkdf2:sha256')
+        current_user.password_changed = True
+        
+        # Log the password change
+        log = AuditLog(
+            admin_id=current_user.id,
+            action='Password Changed',
+            target_type='User',
+            target_id=current_user.id,
+            details='Changed password on first login'
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        flash('Your password has been changed successfully!', 'success')
+        return redirect(url_for('student.dashboard'))
+        
+    return render_template('auth/change_password.html', form=form)
 
 @bp.route('/logout')
 def logout():

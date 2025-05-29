@@ -42,7 +42,14 @@
         <label class="form-label">{{ form.username.label }}</label>
         <div class="input-group">
           <span class="input-group-text"><i class="bi bi-person"></i></span>
-          {{ form.username(class_='form-control', placeholder='Username') }}
+          {{ form.username(class_='form-control', placeholder='Choose a username') }}
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">{{ form.index_number.label }}</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-hash"></i></span>
+          {{ form.index_number(class_='form-control', placeholder='Your index number') }}
         </div>
       </div>
       <div class="mb-3">

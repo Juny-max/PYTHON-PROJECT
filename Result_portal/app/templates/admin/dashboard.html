@@ -125,36 +125,80 @@ window.addEventListener('DOMContentLoaded', function() {
     <div class="sidebar-title">Admin Actions</div>
     <a href="{{ url_for('admin.send_notification') }}" class="nav-link"><i class="bi bi-bell"></i>Send Notification</a>
     <a href="{{ url_for('admin.broadcast_message') }}" class="nav-link"><i class="bi bi-megaphone"></i>Broadcast Message</a>
-    <a href="{{ url_for('admin.audit_logs') }}" class="nav-link"><i class="bi bi-clipboard-data"></i>Audit Logs</a>
-    <a href="{{ url_for('admin.reports') }}" class="nav-link"><i class="bi bi-bar-chart"></i>Reports &amp; Analytics</a>
-    <hr style="border-color: #444;">
-    <a href="{{ url_for('admin.manage_students') }}" class="nav-link"><i class="bi bi-people"></i>Manage Students</a>
-    <a href="{{ url_for('admin.manage_courses') }}" class="nav-link"><i class="bi bi-journal-bookmark"></i>Manage Courses</a>
-    <div class="dropdown position-relative">
-      <a class="nav-link dropdown-toggle w-100 text-start" href="#" id="resultsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-        <i class="bi bi-award"></i> Results
+    <div class="dropdown">
+      <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-file-text"></i>Results
       </a>
-      <ul class="dropdown-menu w-100" aria-labelledby="resultsDropdown">
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="{{ url_for('admin.enter_result') }}">Enter Result</a></li>
         <li><a class="dropdown-item" href="{{ url_for('admin.upload_results') }}">Upload Results</a></li>
         <li><a class="dropdown-item" href="{{ url_for('admin.view_results') }}">View Results</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('admin.enter_result') }}">Enter Result</a></li>
       </ul>
     </div>
+    <div class="dropdown">
+      <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-people"></i>Students
+      </a>
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="{{ url_for('admin.manage_students') }}">Manage Students</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('admin.archived_students') }}">Archived Students</a></li>
+      </ul>
+    </div>
+    <div class="dropdown">
+      <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-book"></i>Courses
+      </a>
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="{{ url_for('admin.manage_courses') }}">Manage Courses</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('admin.add_course') }}">Add Course</a></li>
+      </ul>
+    </div>
+    <div class="dropdown">
+      <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-building"></i>Programs
+      </a>
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="{{ url_for('admin.manage_programs') }}">Manage Programs</a></li>
+      </ul>
+    </div>
+    <a href="{{ url_for('admin.audit_logs') }}" class="nav-link"><i class="bi bi-clock-history"></i>Audit Logs</a>
   </nav>
-  <main class="admin-main">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="container-fluid" style="max-width: 900px; margin: 0 auto;">
-          {% for category, message in messages %}
-            <div class="alert alert-{{ 'success' if category == 'message' else category }} alert-dismissible fade show mt-2 mb-4 text-center" role="alert">
-              {{ message }}
-              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+
+  <div class="admin-main">
     <h2 class="mb-4 fw-bold">Admin Dashboard</h2>
+    
+    <!-- Replace the original row of cards with dashboard-cards style -->
+    <div class="dashboard-cards">
+      <!-- Active Students Card -->
+      <div class="dashboard-card">
+        <span class="icon"><i class="bi bi-person-check"></i></span>
+        <div class="card-title">Active Students</div>
+        <div class="display-4">{{ student_count }}</div>
+      </div>
+      
+      <!-- Archived Students Card -->
+      <div class="dashboard-card">
+        <span class="icon"><i class="bi bi-archive"></i></span>
+        <div class="card-title">Archived Students</div>
+        <div class="display-4">{{ archived_count }}</div>
+      </div>
+      
+      <!-- Programs Card -->
+      <div class="dashboard-card">
+        <span class="icon"><i class="bi bi-building"></i></span>
+        <div class="card-title">Programs</div>
+        <div class="display-4">{{ program_count }}</div>
+      </div>
+      
+      <!-- Courses Card -->
+      <div class="dashboard-card">
+        <span class="icon"><i class="bi bi-book"></i></span>
+        <div class="card-title">Courses</div>
+        <div class="display-4">{{ course_count }}</div>
+      </div>
+    </div>
+    
+    <!-- Keep the existing dashboard-cards section -->
     <div class="dashboard-cards">
       <div class="dashboard-card">
         <span class="icon"><i class="bi bi-people"></i></span>
@@ -163,13 +207,13 @@ window.addEventListener('DOMContentLoaded', function() {
       </div>
       <div class="dashboard-card" style="min-width:240px;max-width:340px;">
         <span class="icon"><i class="bi bi-diagram-3"></i></span>
-        <div class="card-title mb-2">Programs &amp; Student Count</div>
+        <div class="card-title mb-2">Programs & Student Count</div>
         <div class="w-100" style="max-height: 180px; overflow-y: auto;">
           {% if program_counts and program_counts|length > 0 %}
             <ul class="list-group list-group-flush">
               {% for program, count in program_counts %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span><i class="bi bi-bookmark"></i> {{ program }}</span>
+                  <span><i class="bi bi-bookmark"></i> {{ program.name }}</span>
                   <span class="badge bg-primary rounded-pill">{{ count }}</span>
                 </li>
               {% endfor %}
@@ -185,6 +229,7 @@ window.addEventListener('DOMContentLoaded', function() {
         <div class="display-4">{{ recent_results|length }}</div>
       </div>
     </div>
+
     <div class="recent-results-table">
       <h5 class="mb-3"><i class="bi bi-clock-history"></i> Recent Results</h5>
       <div class="table-responsive">
@@ -200,24 +245,26 @@ window.addEventListener('DOMContentLoaded', function() {
             </tr>
           </thead>
           <tbody>
-            {% if recent_results and recent_results|length > 0 %}
+            {% if recent_results %}
               {% for result in recent_results %}
                 <tr>
                   <td>{{ result.student.full_name }}</td>
-                  <td>{{ result.student.program }}</td>
+                  <td>{{ result.student.program.name }}</td>
                   <td>{{ result.course.title }}</td>
-                  <td>{{ result.score }}</td>
+                  <td>{{ result.score|int }}</td>
                   <td>{{ result.grade }}</td>
-                  <td>{{ result.uploaded_at.strftime('%Y-%m-%d') }}</td>
+                  <td>{{ result.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
                 </tr>
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="6" class="text-center text-muted">No recent results.</td>
+                <td colspan="6" class="text-center text-muted">No recent results found</td>
               </tr>
             {% endif %}
           </tbody>
         </table>
       </div>
     </div>
+
+  </div></div>
 {% endblock %}

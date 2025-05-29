@@ -1,8 +1,9 @@
 # Placeholder for auth forms
 
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo
+from wtforms import StringField, PasswordField, SubmitField, ValidationError
+from wtforms.validators import DataRequired, Email, EqualTo, Length
+from werkzeug.security import check_password_hash
 
 class LoginForm(FlaskForm):
     username = StringField('Username or Email', validators=[DataRequired()])
@@ -19,3 +20,15 @@ class RegistrationForm(FlaskForm):
     program = StringField('Program', validators=[DataRequired()])
     level = StringField('Level', validators=[DataRequired()])
     submit = SubmitField('Register')
+
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField('Temporary Password', validators=[DataRequired()])
+    new_password = PasswordField('New Password', validators=[
+        DataRequired(),
+        Length(min=8, message='Password must be at least 8 characters long')
+    ])
+    confirm_password = PasswordField('Confirm New Password', validators=[
+        DataRequired(),
+        EqualTo('new_password', message='Passwords must match')
+    ])
+    submit = SubmitField('Change Password')
