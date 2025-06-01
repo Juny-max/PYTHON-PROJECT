@@ -1,100 +1,409 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h2 class="mb-4 text-center">{% if editing %}Edit Result{% else %}Enter Student Result{% endif %}</h2>
-<div class="card shadow-lg p-4" style="max-width: 600px; margin: auto;">
-<form method="POST" action="{{ url_for('admin.enter_result') }}">
-  {{ form.hidden_tag() }}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <a href="{{ url_for('admin.view_results') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i> Back to Results
+                </a>
+                <h2 class="mb-0">
+                    <i class="bi bi-pencil-square me-2"></i>
+                    {% if editing %}Edit Result{% else %}Enter Student Result{% endif %}
+                </h2>
+                <div></div> <!-- Empty div for flex spacing -->
+            </div>
 
-  <!-- Program dropdown -->
-  <div class="mb-3">
-    {{ form.program.label(class="form-label") }}
-    {{ form.program(class="form-select", onchange="this.form.submit()") }}
-  </div>
+            {% if editing %}
+            <div class="card mb-4 border-0 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-person-badge me-2"></i>
+                        Student Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Name:</strong> {{ student_name }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Index Number:</strong> {{ student_index }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
 
-  <!-- Level -->
-  <div class="mb-3">
-    {{ form.level.label(class="form-label") }}
-    {{ form.level(class="form-select", onchange="this.form.submit()") }}
-  </div>
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-primary text-white py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-journal-text me-2"></i>
+                        {% if editing %}Edit Result{% else %}Enter Result{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body p-4">
+                    <form id="resultForm" method="POST" action="{{ url_for('admin.edit_result', result_id=result_id) if editing else url_for('admin.enter_result') }}" class="needs-validation" novalidate>
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="row g-4">
+                            {% if not editing %}
+                            <!-- Program -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.program.label(class="form-label fw-bold", for="program") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-book"></i></span>
+                                        {{ form.program(id="program", class="form-select program-select" + (' is-invalid' if form.program.errors else '')) }}
+                                    </div>
+                                    {% for error in form.program.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <!-- Student -->
-  <div class="mb-3">
-    {{ form.student.label(class="form-label") }}
-    {% if form.student.choices %}
-      {{ form.student(class="form-select") }}
-    {% else %}
-      <select class="form-select" disabled>
-        <option>No students found for this program and level.</option>
-      </select>
-    {% endif %}
-  </div>
+                            <!-- Level -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.level.label(class="form-label fw-bold", for="level") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-123"></i></span>
+                                        {{ form.level(id="level", class="form-select level-select" + (' is-invalid' if form.level.errors else '')) }}
+                                    </div>
+                                    {% for error in form.level.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <!-- Course -->
-  <div class="mb-3">
-    {{ form.course.label(class="form-label") }}
-    {% if form.course.choices %}
-      {{ form.course(class="form-select") }}
-    {% else %}
-      <select class="form-select" disabled>
-        <option>No courses found for this program.</option>
-      </select>
-    {% endif %}
-  </div>
+                            <!-- Student -->
+                            <div class="col-12">
+                                <div class="form-group">
+                                    {{ form.student.label(class="form-label fw-bold", for="student") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                        {% if form.student.choices %}
+                                            {{ form.student(id="student", class="form-select" + (' is-invalid' if form.student.errors else '')) }}
+                                        {% else %}
+                                            <select id="student" class="form-select" disabled>
+                                                <option>No students found for this program and level</option>
+                                            </select>
+                                        {% endif %}
+                                    </div>
+                                    {% for error in form.student.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
 
-  <!-- Semester, Academic Year, Score, Remarks -->
-  <div class="mb-3">
-    {{ form.semester.label(class="form-label") }}
-    {{ form.semester(class="form-select") }}
-  </div>
+                            <!-- Course -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.course.label(class="form-label fw-bold", for="course") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-journal-bookmark"></i></span>
+                                        {% if editing %}
+                                            <input id="course" type="text" class="form-control" value="{{ form.course.choices[0][1] if form.course.choices else 'Course not found' }}" readonly>
+                                            {{ form.course(id="course_hidden", class="d-none") }}
+                                        {% else %}
+                                            {% if form.course.choices %}
+                                                {{ form.course(id="course", class="form-select" + (' is-invalid' if form.course.errors else '')) }}
+                                            {% else %}
+                                                <select id="course" class="form-select" disabled>
+                                                    <option>No courses found for this program</option>
+                                                </select>
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                    {% for error in form.course.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <div class="mb-3">
-    {{ form.academic_year.label(class="form-label") }}
-    {{ form.academic_year(class="form-select") }}
-  </div>
+                            <!-- Semester -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.semester.label(class="form-label fw-bold") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-calendar3"></i></span>
+                                        {{ form.semester(class="form-select" + (' is-invalid' if form.semester.errors else '')) }}
+                                    </div>
+                                    {% for error in form.semester.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <div class="mb-3">
-    {{ form.score.label(class="form-label") }}
-    {{ form.score(class="form-control") }}
-  </div>
+                            <!-- Academic Year -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.academic_year.label(class="form-label fw-bold") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-calendar-check"></i></span>
+                                        {{ form.academic_year(class="form-select" + (' is-invalid' if form.academic_year.errors else '')) }}
+                                    </div>
+                                    {% for error in form.academic_year.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <div class="mb-3">
-    {{ form.remarks.label(class="form-label") }}
-    {{ form.remarks(class="form-control") }}
-  </div>
+                            <!-- Score -->
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    {{ form.score.label(class="form-label fw-bold") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-percent"></i></span>
+                                        {{ form.score(class="form-control" + (' is-invalid' if form.score.errors else ''), min="0", max="100", step="0.01") }}
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                    <small class="form-text text-muted">Enter a value between 0 and 100</small>
+                                    {% for error in form.score.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
 
-  <button type="submit" class="btn btn-success w-100 mt-3">Submit Result</button>
-</form>
+                            <!-- Remarks -->
+                            <div class="col-12">
+                                <div class="form-group">
+                                    {{ form.remarks.label(class="form-label fw-bold") }}
+                                    {{ form.remarks(class="form-control" + (' is-invalid' if form.remarks.errors else ''), rows="3") }}
+                                    <small class="form-text text-muted">Optional: Add any additional notes or remarks</small>
+                                    {% for error in form.remarks.errors %}
+                                        <div class="invalid-feedback d-block">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="col-12 mt-3">
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                    <a href="{{ url_for('admin.view_results') }}" class="btn btn-outline-secondary me-md-2">
+                                        <i class="bi bi-x-circle me-1"></i> Cancel
+                                    </a>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-save me-1"></i> {{ 'Update Result' if editing else 'Save Result' }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-{% endblock %}
-{% block scripts %}
+{{ super() }}
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(document).ready(function() {
-  // When program changes, log it and update student dropdown
-  $('#program').change(function() {
-    console.log("Program changed to: " + $(this).val());
-    this.form.submit();
-  });
-  
-  // When level changes, log it and update student dropdown
-  $('#level').change(function() {
-    console.log("Level changed to: " + $(this).val());
-    this.form.submit();
-  });
+    console.log('Document ready');
+    console.log('jQuery version:', $.fn.jquery);
+    
+    // Get form elements
+    const $form = $('#resultForm');
+    const $program = $('#program');
+    const $level = $('#level');
+    const $student = $('select[name="student"]');
+    const $course = $('select[name="course"]');
+    const csrfToken = $('input[name="csrf_token"]').val();
+    
+    console.log('Form found:', $form.length > 0);
+    console.log('Program select:', $program.length > 0, 'Value:', $program.val());
+    console.log('Level select:', $level.length > 0, 'Value:', $level.val());
+    console.log('Student select:', $student.length > 0);
+    console.log('Course select:', $course.length > 0);
+    
+    // Function to update dropdowns via AJAX
+    function updateDropdowns(programId, levelId) {
+        console.log('Updating dropdowns with program:', programId, 'level:', levelId);
+        
+        // Disable and show loading
+        $student.prop('disabled', true).html('<option value="">Loading students...</option>');
+        $course.prop('disabled', true).html('<option value="">Loading courses...</option>');
+        
+        // Make the AJAX request
+        $.ajax({
+            url: '{{ url_for("admin.update_result_filters") }}',
+            type: 'POST',
+            data: {
+                program: programId,
+                level: levelId,
+                csrf_token: csrfToken
+            },
+            dataType: 'json',
+            success: function(response) {
+                console.log('AJAX success:', response);
+                
+                // Update student dropdown
+                $student.empty();
+                if (response.students && response.students.length > 0) {
+                    $student.append('<option value="" disabled selected>-- Select Student --</option>');
+                    $.each(response.students, function(i, student) {
+                        $student.append($('<option>', {
+                            value: student.id,
+                            text: student.text
+                        }));
+                    });
+                    $student.prop('disabled', false);
+                } else {
+                    $student.html('<option value="" disabled selected>No students found</option>');
+                }
+                
+                // Update course dropdown
+                $course.empty();
+                if (response.courses && response.courses.length > 0) {
+                    $course.append('<option value="" disabled selected>-- Select Course --</option>');
+                    $.each(response.courses, function(i, course) {
+                        $course.append($('<option>', {
+                            value: course.id,
+                            text: course.text
+                        }));
+                    });
+                    $course.prop('disabled', false);
+                } else {
+                    $course.html('<option value="" disabled selected>No courses found</option>');
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX error:', status, error);
+                console.error('Response:', xhr.responseText);
+                alert('Error loading data. Please check console for details.');
+                
+                // Reset dropdowns
+                $student.html('<option value="">Error loading students</option>');
+                $course.html('<option value="">Error loading courses</option>');
+            }
+        });
+    }
+    
+    // Handle program/level changes
+    function handleProgramLevelChange(e) {
+        // Prevent form submission
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        const programId = $program.val();
+        const levelId = $level.val();
+        
+        console.log('Program/Level changed:', programId, levelId);
+        
+        if (programId && levelId) {
+            updateDropdowns(programId, levelId);
+        } else {
+            $student.prop('disabled', true).html('<option value="">Select program and level first</option>');
+            $course.prop('disabled', true).html('<option value="">Select program and level first</option>');
+        }
+        
+        return false;
+    }
+    
+    // Prevent form submission when changing dropdowns
+    $('select').on('change', function(e) {
+        if ($(this).is('#program, #level')) {
+            handleProgramLevelChange(e);
+            return false;
+        }
+    });
+    
+    // Prevent form submission on enter
+    $(document).on('keypress', 'form', function(e) {
+        if (e.which === 13) {
+            e.preventDefault();
+            return false;
+        }
+    });
+    
+    // Initialize if we have values
+    if ($program.val() && $level.val()) {
+        console.log('Initial values found, triggering update...');
+        // Use setTimeout to ensure the DOM is fully loaded
+        setTimeout(function() {
+            handleProgramLevelChange();
+        }, 100);
+    }
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Enable Bootstrap form validation
+    (function () {
+        'use strict'
+        
+        // Fetch all the forms we want to apply custom Bootstrap validation styles to
+        var forms = document.querySelectorAll('.needs-validation')
+        
+        // Loop over them and prevent submission
+        Array.prototype.slice.call(forms)
+            .forEach(function (form) {
+                form.addEventListener('submit', function (event) {
+                    if (!form.checkValidity()) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    
+                    form.classList.add('was-validated')
+                }, false)
+            })
+    })();
+
+    // Initialize form fields with any existing values
+    function initializeFormFields() {
+        // Set program if available
+        const programSelect = document.getElementById('program');
+        const selectedProgram = '{{ form.program.data }}';
+        if (programSelect && selectedProgram) {
+            programSelect.value = selectedProgram;
+        }
+
+        // Set level if available
+        const levelSelect = document.getElementById('level');
+        const selectedLevel = '{{ form.level.data }}';
+        if (levelSelect && selectedLevel) {
+            levelSelect.value = selectedLevel;
+        }
+    }
+
+
+    // Real-time score validation
+    const scoreInput = document.getElementById('score');
+    if (scoreInput) {
+        scoreInput.addEventListener('input', function() {
+            const value = parseFloat(this.value);
+            if (isNaN(value) || value < 0 || value > 100) {
+                this.setCustomValidity('Score must be between 0 and 100');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    }
+
+    // Auto-submit when program or level changes
+    $(document).on('change', '#program, #level', function() {
+        if ($(this).val()) {
+            $('<input>').attr({
+                type: 'hidden',
+                name: 'auto_submit',
+                value: 'true'
+            }).appendTo('form');
+            $('form').submit();
+        }
+    });
+
+    // Initialize form fields when the document is ready
+    initializeFormFields();
+
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 });
 </script>
 {% endblock %}
-# Add this to a route temporarily to debug
-@bp.route('/debug_db')
-@login_required
-def debug_db():
-    programs = Program.query.all()
-    levels = Level.query.all()
-    students = Student.query.all()
-    
-    return jsonify({
-        'programs': [{'id': p.id, 'name': p.name} for p in programs],
-        'levels': [{'id': l.id, 'name': l.name} for l in levels],
-        'student_count': len(students)
-    })

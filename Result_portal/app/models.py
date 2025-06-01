@@ -29,6 +29,9 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+import secrets
+import string
+
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     notifications = db.relationship('Notification', backref='user', lazy='dynamic')
@@ -40,7 +43,20 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
     user_type = db.Column(db.Enum('admin', 'student', name='user_types'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    first_login = db.Column(db.Boolean, default=True, nullable=False)
     student = db.relationship('Student', backref='user', uselist=False, lazy=True)
+    
+    @classmethod
+    def generate_random_password(cls, length=12):
+        """Generate a random password with letters, digits, and special characters"""
+        alphabet = string.ascii_letters + string.digits + '!@#$%^&*'
+        while True:
+            password = ''.join(secrets.choice(alphabet) for _ in range(length))
+            # Ensure password has at least one of each character type
+            if (any(c.islower() for c in password) 
+                and any(c.isupper() for c in password) 
+                and any(c.isdigit() for c in password)):
+                return password
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
@@ -50,6 +66,9 @@ class User(UserMixin, db.Model):
     
     def is_admin(self):
         return self.user_type == 'admin'
+        
+    def unread_notifications_count(self):
+        return self.notifications.filter_by(is_read=False).count()
 
 # Association table for many-to-many relationship between Program and Course
 program_courses = db.Table('program_courses',
@@ -168,13 +187,18 @@ class Student(db.Model):
 
 class Course(db.Model):
     __tablename__ = 'courses'
-    
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(20), unique=True, nullable=False)
     title = db.Column(db.String(100), nullable=False)
     credit_hours = db.Column(db.Integer, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    level = db.Column(db.Integer, nullable=True)
+    semester = db.Column(db.String(20), nullable=True)
     results = db.relationship('Result', backref='course', lazy=True)
     programs = db.relationship('Program', secondary=program_courses, back_populates='courses')
+    
+    def __repr__(self):
+        return f'<Course {self.code} - {self.title}>'
 
 class Result(db.Model):
     __tablename__ = 'results'
@@ -189,6 +213,8 @@ class Result(db.Model):
     remarks = db.Column(db.Text)
     uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    student_level_id = db.Column(db.Integer, db.ForeignKey('levels.id'), nullable=True)
+    student_level = db.relationship('Level', backref='results', lazy=True)
     
     def determine_grade(self):
         score = float(self.score)

@@ -3,38 +3,57 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+    // Make CSRF token available globally
+    window.csrfToken = "{{ csrf_token() }}";
+  </script>
   <title>{% block title %}Student Result Portal{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    html, body {
+      height: 100%;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    .main-content {
+      flex: 1 0 auto;
+      min-height: calc(100vh - 120px);
+    }
+    .footer {
+      flex-shrink: 0;
+      background-color: #f8f9fa;
+      padding: 1rem 0;
+    }
+  </style>
   {% block styles %}{% endblock %}
 </head>
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
       <div class="container">
           <a class="navbar-brand" href="{{ url_for('index') }}">Result Portal</a>
+
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
               <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="navbarNav">
               <ul class="navbar-nav me-auto">
-                  {% if not current_user.is_authenticated %}
-                  <li class="nav-item d-flex align-items-center">
-                      <a class="nav-link px-2 fw-semibold" href="{{ url_for('index') }}">
-                          <i class="bi bi-house-door-fill me-1"></i> Home
-                      </a>
-                  </li>
-                  {% endif %}
                   {% if current_user.is_authenticated %}
-                      {% if current_user.is_admin() %}
-                          <li class="nav-item">
-                              <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
-                          </li>
-                      {% else %}
-                          <li class="nav-item">
-                              <a class="nav-link" href="{{ url_for('student.dashboard') }}">Dashboard</a>
-                          </li>
-                      {% endif %}
+                      <li class="nav-item d-flex align-items-center">
+                          <a class="nav-link px-2 fw-semibold" href="{{ url_for('admin.dashboard' if current_user.is_admin() else 'student.dashboard') }}" style="background-color: transparent !important;">
+                              <i class="bi bi-speedometer2 me-1"></i> Dashboard
+                          </a>
+                      </li>
+                  {% else %}
+                      <li class="nav-item d-flex align-items-center">
+                          <a class="nav-link px-2 fw-semibold" href="{{ url_for('index') }}">
+                              <i class="bi bi-house-door-fill me-1"></i> Home
+                          </a>
+                      </li>
                   {% endif %}
               </ul>
               <ul class="navbar-nav">
@@ -68,7 +87,7 @@
                   {% if current_user.is_authenticated %}
                       <li class="nav-item d-flex align-items-center">
                           <span class="navbar-text px-2 fw-semibold">
-                              <i class="bi bi-person-circle me-1"></i> Hello, {{ current_user.username }}
+                              <i class="bi bi-person-circle me-1"></i> {{ current_user.username }}
                           </span>
                       </li>
                       <li class="nav-item d-flex align-items-center">
@@ -88,21 +107,28 @@
       </div>
   </nav>
 
-  <div class="container mt-5" style="margin-top: 80px !important;">
-      {% block content %}{% endblock %}
+  <div class="main-content">
+    <div class="container" style="margin-top: 80px !important;">
+        {% block content %}{% endblock %}
+    </div>
   </div>
 
-
-  <!-- Bootstrap 5 JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js" 
+          integrity="sha512-pumBsjNRGGqkPzKHndZMaAG+bir374sORyzM3uulLV14lN5LyykqNk8eEeUlUkB3U0M4FApyaHraT65ihJhDpQ==" 
+          crossorigin="anonymous" 
+          referrerpolicy="no-referrer"></script>
+  
+  <!-- Bootstrap 5 JS Bundle with Popper -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" 
+          integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" 
+          crossorigin="anonymous"></script>
     
-  {% if not request.path in ['/login', '/'] %}
-  <footer class="footer mt-5 py-3 bg-light">
+  <footer class="footer py-3 bg-light">
       <div class="container text-center">
           <span class="text-muted">Student Result Portal &copy; {{ now.year if now else '2025' }}</span>
       </div>
   </footer>
-  {% endif %}
   {% block scripts %}{% endblock %}
   <!-- Confirmation Modal for Actions -->
   <div class="modal fade" id="confirmActionModal" tabindex="-1" aria-labelledby="confirmActionModalLabel" aria-hidden="true">
@@ -120,6 +146,7 @@
         </div>
         <div class="modal-footer">
           <form id="confirmActionForm" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary">Yes, Continue</button>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           </form>

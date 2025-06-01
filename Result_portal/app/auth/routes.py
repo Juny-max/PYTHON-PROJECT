@@ -1,10 +1,11 @@
 from flask import render_template, flash, redirect, url_for, request
-from flask_login import login_user, logout_user, current_user
+from flask_login import login_user, logout_user, current_user, login_required
 from urllib.parse import urlparse
+from werkzeug.security import generate_password_hash
 from app import db
 from app.auth import bp
-from app.auth.forms import LoginForm, RegistrationForm
-from app.models import User, Student
+from app.auth.forms import LoginForm, RegistrationForm, ChangePasswordForm
+from app.models import User, Student, AuditLog
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -12,34 +13,42 @@ def login():
         return redirect(url_for('index'))
     
     form = LoginForm()
+    
     if form.validate_on_submit():
         # Strip whitespace from input
         user_input = form.username.data.strip()
         password_input = form.password.data
+        
         user = User.query.filter((User.username == user_input) | (User.email == user_input)).first()
+        
         if user is None:
             flash('No user found with that username or email.', 'danger')
             return redirect(url_for('auth.login'))
-        print('DEBUG: Stored hash:', user.password_hash)
-        print('DEBUG: Password entered:', password_input)
-        print('DEBUG: Password check result:', user.check_password(password_input))
+            
         if not user.check_password(password_input):
             flash('Password is incorrect for this account.', 'danger')
             return redirect(url_for('auth.login'))
         
         login_user(user)
+        
         # Log login event
         from app.models import LoginHistory
         login_record = LoginHistory(user_id=user.id, ip_address=request.remote_addr)
         db.session.add(login_record)
+        
+        # Check if it's the user's first login
+        if user.first_login:
+            db.session.commit()  # Commit login record before redirecting
+            return redirect(url_for('auth.change_password'))
+            
         db.session.commit()
+        
         next_page = request.args.get('next')
+        
         if not next_page or urlparse(next_page).netloc != '':
-            # Redirect students to their dashboard
-            if user.is_admin():
-                next_page = url_for('admin.dashboard')
-            else:
-                next_page = url_for('student.dashboard')
+            # Redirect to appropriate dashboard based on user type
+            next_page = url_for('admin.dashboard' if user.is_admin() else 'student.dashboard')
+        
         return redirect(next_page)
     
     return render_template('auth/login.html', title='Sign In', form=form)
@@ -87,6 +96,40 @@ def register():
         return redirect(url_for('auth.login'))
     
     return render_template('auth/register.html', title='Register', form=form)
+
+@bp.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if not current_user.first_login:
+        return redirect(url_for('admin.dashboard' if current_user.is_admin() else 'student.dashboard'))
+    
+    form = ChangePasswordForm()
+    
+    if form.validate_on_submit():
+        # Verify current password
+        if not current_user.check_password(form.current_password.data):
+            flash('Current password is incorrect.', 'danger')
+            return redirect(url_for('auth.change_password'))
+        
+        # Update password
+        current_user.password_hash = generate_password_hash(form.new_password.data)
+        current_user.first_login = False  # Mark as not first login anymore
+        
+        # Log the password change
+        log = AuditLog(
+            admin_id=current_user.id,
+            action='Password Changed',
+            target_type='User',
+            target_id=current_user.id,
+            details='User changed their password on first login'
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        flash('Your password has been updated successfully!', 'success')
+        return redirect(url_for('admin.dashboard' if current_user.is_admin() else 'student.dashboard'))
+    
+    return render_template('auth/change_password.html', title='Change Password', form=form)
 
 @bp.route('/logout')
 def logout():

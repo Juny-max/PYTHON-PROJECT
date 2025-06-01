@@ -85,7 +85,7 @@
   <div class="login-card">
     <span class="login-header-icon"><i class="bi bi-shield-lock-fill"></i></span>
     <h2 class="text-center mb-4">Login</h2>
-    <form method="POST" novalidate>
+    <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm" novalidate>
       {{ form.hidden_tag() }}
       <div class="mb-3">
         <label class="form-label">{{ form.username.label }}</label>
@@ -102,9 +102,19 @@
         </div>
       </div>
       <div class="d-grid gap-2">
-        {{ form.submit(class_='btn btn-primary login-btn') }}
+        <button type="submit" name="submit" class="btn btn-primary login-btn">
+          <i class="bi bi-box-arrow-in-right me-2"></i>Login
+        </button>
       </div>
-      <a href="#" class="forgot-link">Forgot password?</a>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            {% if category != 'message' %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
     </form>
   </div>
 </div>
