@@ -101,12 +101,22 @@
                             <!-- Course -->
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    {{ form.course.label(class="form-label fw-bold", for="course") }}
+                                    <label for="course" class="form-label fw-bold">{{ form.course.label.text }}</label>
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="bi bi-journal-bookmark"></i></span>
                                         {% if editing %}
-                                            <input id="course" type="text" class="form-control" value="{{ form.course.choices[0][1] if form.course.choices else 'Course not found' }}" readonly>
-                                            {{ form.course(id="course_hidden", class="d-none") }}
+                                            {% set course_display = '' %}
+                                            {% if result and result.course %}
+                                                {% set course_display = "%s - %s"|format(result.course.code, result.course.title) %}
+                                            {% else %}
+                                                {% for id, name in form.course.choices %}
+                                                    {% if id == form.course.data|string %}
+                                                        {% set course_display = name %}
+                                                    {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
+                                            <input type="text" id="course_display" class="form-control" value="{{ course_display }}" readonly>
+                                            <input type="hidden" id="course" name="course" value="{{ form.course.data if form.course.data else '' }}">
                                         {% else %}
                                             {% if form.course.choices %}
                                                 {{ form.course(id="course", class="form-select" + (' is-invalid' if form.course.errors else '')) }}
@@ -198,121 +208,292 @@
     </div>
 </div>
 {{ super() }}
+<input type="hidden" id="isEditing" value="{% if editing %}true{% else %}false{% endif %}">
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(document).ready(function() {
-    console.log('Document ready');
-    console.log('jQuery version:', $.fn.jquery);
+    'use strict';
     
-    // Get form elements
-    const $form = $('#resultForm');
-    const $program = $('#program');
-    const $level = $('#level');
-    const $student = $('select[name="student"]');
-    const $course = $('select[name="course"]');
-    const csrfToken = $('input[name="csrf_token"]').val();
+    // Check if we're in edit mode
+    var isEditing = $('#isEditing').val() === 'true';
     
-    console.log('Form found:', $form.length > 0);
-    console.log('Program select:', $program.length > 0, 'Value:', $program.val());
-    console.log('Level select:', $level.length > 0, 'Value:', $level.val());
-    console.log('Student select:', $student.length > 0);
-    console.log('Course select:', $course.length > 0);
-    
-    // Function to update dropdowns via AJAX
-    function updateDropdowns(programId, levelId) {
-        console.log('Updating dropdowns with program:', programId, 'level:', levelId);
+    // Initialize form fields
+    function initializeFormFields() {
+        // Disable dependent fields initially
+        if ($('#student').length && $('#course').length) {
+            $('#student, #course').prop('disabled', true);
+        }
         
-        // Disable and show loading
-        $student.prop('disabled', true).html('<option value="">Loading students...</option>');
-        $course.prop('disabled', true).html('<option value="">Loading courses...</option>');
+        // Disable program, level, and course fields in edit mode
+        if (isEditing) {
+            $('#program, #level, #course').prop('disabled', true);
+        }
+    }
+    
+    // Initialize form fields on document ready
+    initializeFormFields();
+
+    /**
+     * Update students and courses dropdowns based on selected program and level
+     * @param {string} programId - The selected program ID
+     * @param {string} levelId - The selected level ID
+     * @param {Function} [callback] - Optional callback function to execute after updating dropdowns
+     */
+    function updateDropdowns(programId, levelId, callback) {
+        if (!programId || !levelId) {
+            $('#student, #course').prop('disabled', true).html('<option value="">-- Select a program and level first --</option>');
+            return;
+        }
+
+        // Show loading state
+        const $studentSelect = $('#student');
+        const $courseSelect = $('#course');
         
-        // Make the AJAX request
+        $studentSelect.html('<option value="">Loading students...</option>').prop('disabled', true);
+        $courseSelect.html('<option value="">Loading courses...</option>').prop('disabled', true);
+
+        // Get CSRF token from the form
+        const csrfToken = $('input[name="csrf_token"]').val();
+
+        // Make AJAX request to get students and courses
         $.ajax({
-            url: '{{ url_for("admin.update_result_filters") }}',
-            type: 'POST',
+            url: '{{ url_for("admin.enter_result") }}',
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrfToken
+            },
             data: {
-                program: programId,
-                level: levelId,
-                csrf_token: csrfToken
+                'program_id': programId,
+                'level_id': levelId,
+                'csrf_token': csrfToken
             },
             dataType: 'json',
             success: function(response) {
-                console.log('AJAX success:', response);
-                
-                // Update student dropdown
-                $student.empty();
-                if (response.students && response.students.length > 0) {
-                    $student.append('<option value="" disabled selected>-- Select Student --</option>');
-                    $.each(response.students, function(i, student) {
-                        $student.append($('<option>', {
-                            value: student.id,
-                            text: student.text
-                        }));
-                    });
-                    $student.prop('disabled', false);
-                } else {
-                    $student.html('<option value="" disabled selected>No students found</option>');
-                }
-                
-                // Update course dropdown
-                $course.empty();
-                if (response.courses && response.courses.length > 0) {
-                    $course.append('<option value="" disabled selected>-- Select Course --</option>');
-                    $.each(response.courses, function(i, course) {
-                        $course.append($('<option>', {
-                            value: course.id,
-                            text: course.text
-                        }));
-                    });
-                    $course.prop('disabled', false);
-                } else {
-                    $course.html('<option value="" disabled selected>No courses found</option>');
+                try {
+                    if (response.error) {
+                        $studentSelect.html(`<option value="">Error: ${response.error}</option>`).prop('disabled', true);
+                        $courseSelect.html(`<option value="">Error: ${response.error}</option>`).prop('disabled', true);
+                        return;
+                    }
+
+                    // Update students dropdown
+                    let studentOptions = '<option value="">-- Select Student --</option>';
+                    if (response.students && response.students.length > 0) {
+                        response.students.forEach(function(student) {
+                            studentOptions += `<option value="${student.id}">${student.text}</option>`;
+                        });
+                    } else {
+                        studentOptions = '<option value="">No students found</option>';
+                    }
+                    $studentSelect.html(studentOptions).prop('disabled', false);
+
+                    // Update courses dropdown
+                    let courseOptions = '<option value="">-- Select Course --</option>';
+                    if (response.courses && response.courses.length > 0) {
+                        response.courses.forEach(function(course) {
+                            courseOptions += `<option value="${course.id}">${course.text}</option>`;
+                        });
+                    } else {
+                        courseOptions = '<option value="">No courses found</option>';
+                    }
+                    $courseSelect.html(courseOptions).prop('disabled', false);
+                    
+                    // Execute callback if provided
+                    if (typeof callback === 'function') {
+                        callback();
+                    }
+                } catch (e) {
+                    console.error('Error processing response:', e);
+                    $studentSelect.html('<option value="">Error processing response</option>').prop('disabled', true);
+                    $courseSelect.html('<option value="">Error processing response</option>').prop('disabled', true);
                 }
             },
             error: function(xhr, status, error) {
-                console.error('AJAX error:', status, error);
-                console.error('Response:', xhr.responseText);
-                alert('Error loading data. Please check console for details.');
+                console.error('Error fetching data:', error, xhr);
+                $studentSelect.html('<option value="">Error loading students</option>').prop('disabled', true);
+                $courseSelect.html('<option value="">Error loading courses</option>').prop('disabled', true);
                 
-                // Reset dropdowns
-                $student.html('<option value="">Error loading students</option>');
-                $course.html('<option value="">Error loading courses</option>');
+                // Show error message to user
+                let errorMsg = 'An error occurred while loading data';
+                try {
+                    const response = xhr.responseJSON || JSON.parse(xhr.responseText);
+                    errorMsg = response.error || response.message || errorMsg;
+                } catch (e) {
+                    errorMsg = xhr.statusText || errorMsg;
+                }
+                
+                // Show error alert
+                const errorHtml = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        ${errorMsg}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`;
+                $('.container.py-4').prepend(errorHtml);
+                
+                // Scroll to top to show error
+                $('html, body').animate({ scrollTop: 0 }, 'fast');
             }
         });
     }
-    
-    // Handle program/level changes
-    function handleProgramLevelChange(e) {
-        // Prevent form submission
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        
-        const programId = $program.val();
-        const levelId = $level.val();
-        
-        console.log('Program/Level changed:', programId, levelId);
+
+    // Handle program/level change
+    $('#program, #level').on('change', function() {
+        const programId = $('#program').val();
+        const levelId = $('#level').val();
         
         if (programId && levelId) {
             updateDropdowns(programId, levelId);
         } else {
-            $student.prop('disabled', true).html('<option value="">Select program and level first</option>');
-            $course.prop('disabled', true).html('<option value="">Select program and level first</option>');
-        }
-        
-        return false;
-    }
-    
-    // Prevent form submission when changing dropdowns
-    $('select').on('change', function(e) {
-        if ($(this).is('#program, #level')) {
-            handleProgramLevelChange(e);
-            return false;
+            $('#student, #course').prop('disabled', true).html('<option value="">-- Select both program and level --</option>');
         }
     });
     
-    // Prevent form submission on enter
+    // Initialize if we have values on page load
+    const programId = $('#program').val();
+    const levelId = $('#level').val();
+    
+    if (programId && levelId) {
+        console.log('Initial values found, triggering update...');
+        // Use setTimeout to ensure the DOM is fully loaded
+        setTimeout(function() {
+            updateDropdowns(programId, levelId);
+        }, 100);
+    }
+    
+    // Score validation
+    const scoreInput = document.getElementById('score');
+    if (scoreInput) {
+        const validateScore = function() {
+            const value = parseFloat(this.value);
+            if (isNaN(value) || value < 0 || value > 100) {
+                this.setCustomValidity('Score must be between 0 and 100');
+            } else {
+                this.setCustomValidity('');
+            }
+        };
+        scoreInput.addEventListener('input', validateScore);
+        scoreInput.addEventListener('change', validateScore);
+    }
+    
+    // Form submission handler
+    $('#resultForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        // Reset validation
+        const form = this;
+        let isValid = true;
+        
+        // Validate required fields
+        const requiredFields = ['program', 'level', 'student', 'course', 'semester', 'academic_year', 'score'];
+        requiredFields.forEach(function(fieldId) {
+            const field = $('#' + fieldId);
+            if ((!field.val() || field.val() === '') && fieldId !== 'remarks') {
+                field.addClass('is-invalid');
+                field.siblings('.invalid-feedback').remove();
+                field.after('<div class="invalid-feedback d-block">This field is required</div>');
+                isValid = false;
+            } else {
+                field.removeClass('is-invalid');
+            }
+        });
+        
+        // Validate score
+        const scoreInput = $('#score');
+        if (scoreInput.val()) {
+            const score = parseFloat(scoreInput.val());
+            if (isNaN(score) || score < 0 || score > 100) {
+                scoreInput.addClass('is-invalid');
+                scoreInput.siblings('.invalid-feedback').remove();
+                scoreInput.after('<div class="invalid-feedback d-block">Score must be between 0 and 100</div>');
+                isValid = false;
+            } else {
+                scoreInput.removeClass('is-invalid');
+            }
+        }
+        
+        // If form is not valid, show errors and stop submission
+        if (!isValid) {
+            e.stopPropagation();
+            form.classList.add('was-validated');
+            
+            // Focus on first invalid field
+            const firstInvalid = $(form).find('.is-invalid').first();
+            if (firstInvalid.length > 0) {
+                firstInvalid.focus();
+            }
+            
+            return false;
+        }
+        
+        // Get form data
+        const isEditing = $('#isEditing').val() === 'true';
+        const url = $(form).attr('action');
+        
+        // Create form data object with all required fields
+        const formData = new FormData();
+        
+        // Get all form values
+        const programId = $('#program').val();
+        const levelId = $('#level').val();
+        const studentId = $('#student').val();
+        const courseId = $('#course').val();
+        const semester = $('#semester').val();
+        const academicYear = $('#academic_year').val();
+        const score = $('#score').val();
+        const remarks = $('#remarks').val() || '';
+        
+        // Add all required fields to form data
+        formData.append('program', programId);
+        formData.append('program_id', programId);
+        formData.append('level', levelId);
+        formData.append('level_id', levelId);
+        formData.append('student_level_id', levelId);
+        formData.append('student', studentId);
+        formData.append('course', courseId);
+        formData.append('semester', semester);
+        formData.append('academic_year', academicYear);
+        formData.append('score', score);
+        if (remarks) formData.append('remarks', remarks);
+        
+        // Add CSRF token
+        const csrfToken = $('input[name="csrf_token"]').val();
+        if (csrfToken) formData.append('csrf_token', csrfToken);
+        
+        // Log the form data for debugging
+        const formDataObj = {};
+        for (let [key, value] of formData.entries()) {
+            formDataObj[key] = value;
+        }
+        console.log('Form data being submitted:', formDataObj);
+        
+        // Disable submit button and show loading state
+        const submitBtn = $(form).find('button[type="submit"]');
+        const originalBtnText = submitBtn.html();
+        submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...');
+        
+        // Clear previous alerts
+        $('.alert-dismissible').remove();
+        
+        // Submit the form normally (not via AJAX)
+        form.submit();
+    });
+    
+    // Handle program change to update courses and students
+    $('#program, #level').on('change', function() {
+        const programId = $('#program').val();
+        const levelId = $('#level').val();
+        
+        if (programId && levelId) {
+            updateDropdowns(programId, levelId);
+        } else {
+            // Clear and disable dependent dropdowns if program or level is not selected
+            $('#student, #course').empty().prop('disabled', true);
+        }
+    });
+    
     $(document).on('keypress', 'form', function(e) {
         if (e.which === 13) {
             e.preventDefault();
@@ -320,90 +501,11 @@ $(document).ready(function() {
         }
     });
     
-    // Initialize if we have values
-    if ($program.val() && $level.val()) {
-        console.log('Initial values found, triggering update...');
-        // Use setTimeout to ensure the DOM is fully loaded
-        setTimeout(function() {
-            handleProgramLevelChange();
-        }, 100);
+    // Initialize tooltips if any
+    if (typeof $().tooltip === 'function') {
+        $('[data-bs-toggle="tooltip"]').tooltip();
     }
-});
-</script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Enable Bootstrap form validation
-    (function () {
-        'use strict'
-        
-        // Fetch all the forms we want to apply custom Bootstrap validation styles to
-        var forms = document.querySelectorAll('.needs-validation')
-        
-        // Loop over them and prevent submission
-        Array.prototype.slice.call(forms)
-            .forEach(function (form) {
-                form.addEventListener('submit', function (event) {
-                    if (!form.checkValidity()) {
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                    
-                    form.classList.add('was-validated')
-                }, false)
-            })
-    })();
-
-    // Initialize form fields with any existing values
-    function initializeFormFields() {
-        // Set program if available
-        const programSelect = document.getElementById('program');
-        const selectedProgram = '{{ form.program.data }}';
-        if (programSelect && selectedProgram) {
-            programSelect.value = selectedProgram;
-        }
-
-        // Set level if available
-        const levelSelect = document.getElementById('level');
-        const selectedLevel = '{{ form.level.data }}';
-        if (levelSelect && selectedLevel) {
-            levelSelect.value = selectedLevel;
-        }
-    }
-
-
-    // Real-time score validation
-    const scoreInput = document.getElementById('score');
-    if (scoreInput) {
-        scoreInput.addEventListener('input', function() {
-            const value = parseFloat(this.value);
-            if (isNaN(value) || value < 0 || value > 100) {
-                this.setCustomValidity('Score must be between 0 and 100');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-    }
-
-    // Auto-submit when program or level changes
-    $(document).on('change', '#program, #level', function() {
-        if ($(this).val()) {
-            $('<input>').attr({
-                type: 'hidden',
-                name: 'auto_submit',
-                value: 'true'
-            }).appendTo('form');
-            $('form').submit();
-        }
-    });
-
-    // Initialize form fields when the document is ready
-    initializeFormFields();
-
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+    
 });
 </script>
 {% endblock %}

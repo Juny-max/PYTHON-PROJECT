@@ -41,10 +41,9 @@ def get_academic_years(num_years=5):
     return academic_years
 
 class EnterResultForm(FlaskForm):
-    index_number = StringField('Index Number', validators=[DataRequired()])
     program = SelectField('Program', coerce=lambda x: int(x) if x else None, validators=[DataRequired()])
     level = SelectField('Level', coerce=lambda x: int(x) if x else None, validators=[DataRequired()])
-    student = SelectField('Student', coerce=lambda x: int(x) if x else None, validators=[Optional()])
+    student = SelectField('Student', coerce=lambda x: int(x) if x else None, validators=[DataRequired()])
     course = SelectField('Course', coerce=lambda x: int(x) if x else None, validators=[DataRequired()])
     semester = SelectField('Semester', choices=[('1', 'First Semester'), ('2', 'Second Semester')], validators=[DataRequired()])
     academic_year = SelectField('Academic Year', choices=get_academic_years(), validators=[DataRequired()])

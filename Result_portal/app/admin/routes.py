@@ -24,6 +24,7 @@ from flask import send_from_directory
 from app.admin.forms import UploadResultsForm, AddCourseForm, EditStudentForm, EnterResultForm, StudentSearchForm
 from app.models import User, Student, Course, Result, Program, Level, AuditLog
 from app.utils.helpers import allowed_file
+from app.utils.audit_logger import log_admin_action
 #from app.models import ProgramCourse
 
 # Create and configure the admin blueprint
@@ -550,6 +551,12 @@ def upload_results():
 def manage_courses():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
+        
+    # Check for any flash messages from the add_course route
+    if request.referrer and 'add_course' in request.referrer:
+        # The flash message is already set in add_course, no need to set it again
+        pass
+        
     courses = Course.query.all()
     programs = Program.query.filter_by(archived=False).all()
     form = AddCourseForm()
@@ -1027,120 +1034,230 @@ def add_course():
 @bp.route('/enter_result', methods=['GET', 'POST'])
 @login_required
 def enter_result():
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+        
+    from app.admin.forms import EnterResultForm
+    from app.models import Program, Level, Student, Result, AuditLog, Course
+    
     form = EnterResultForm()
-
-    # Populate program and level choices
+    
+    # Get all active programs and levels
     programs = Program.query.filter_by(archived=False).all()
     levels = Level.query.filter_by(archived=False).order_by(Level.name).all()
+    
+    # Set program and level choices
     form.program.choices = [(p.id, p.name) for p in programs]
     form.level.choices = [(l.id, l.name) for l in levels]
-
-    selected_program = request.form.get('program', type=int)
-    selected_level = request.form.get('level', type=int)
-
-    # Populate students based on selected program and level
-    if selected_program and selected_level:
-        students = Student.query.filter_by(
-            program_id=selected_program,
-            level_id=selected_level,
-            archived=False
-        ).all()
-        form.student.choices = [(s.id, f"{s.full_name} ({s.index_number})") for s in students]
-    else:
-        form.student.choices = []
-
-    # Populate courses based on selected program
-    if selected_program:
-        program = Program.query.get(selected_program)
-        courses = program.courses if program else []
-        form.course.choices = [(c.id, f"{c.code} - {c.title}") for c in courses]
-    else:
-        form.course.choices = []
-
-    # Handle form submission
-    if form.validate_on_submit():
-        student_id = form.student.data
-        course_id = form.course.data
-        score = form.score.data
-        semester = form.semester.data
-        academic_year = form.academic_year.data
-        remarks = form.remarks.data
-
-        # Get the student to get their current level
-        student = Student.query.get(student_id)
-        if not student:
-            flash('Student not found', 'danger')
-            return redirect(url_for('admin.enter_result'))
-
-        # Check if result exists for this student, course, semester, and academic year
-        existing_result = Result.query.filter_by(
-            student_id=student_id,
-            course_id=course_id,
-            semester=semester,
-            academic_year=academic_year
-        ).first()
-
-        grade = calculate_grade(score)
-
-        if existing_result:
-            # Update existing result
-            existing_result.score = score
-            existing_result.grade = grade
-            existing_result.remarks = remarks
-            existing_result.student_level_id = student.level_id  # Update level
+    
+    # Handle AJAX request for students and courses
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        program_id = request.form.get('program_id')
+        level_id = request.form.get('level_id')
+        
+        if not program_id or not level_id:
+            return jsonify({'error': 'Missing program_id or level_id'}), 400
             
-            # Log the update
-            log = AuditLog(
-                admin_id=current_user.id,
-                action='Update Result',
-                target_type='Result',
-                target_id=existing_result.id,
-                details=f'Updated result for student ID {student_id}, course ID {course_id}'
-            )
-            db.session.add(log)
-        else:
-            # Create new result
-            new_result = Result(
+        try:
+            # Get students for the selected program and level
+            students = Student.query.filter_by(
+                program_id=program_id,
+                level_id=level_id,
+                archived=False
+            ).all()
+            
+            # Get courses for the selected program
+            program = Program.query.get(program_id)
+            courses = program.courses if program else []
+            
+            return jsonify({
+                'students': [{'id': s.id, 'text': f"{s.full_name} ({s.index_number})"} for s in students],
+                'courses': [{'id': c.id, 'text': f"{c.code} - {c.title}"} for c in courses]
+            })
+        except Exception as e:
+            current_app.logger.error(f"Error in AJAX request: {str(e)}")
+            return jsonify({'error': 'An error occurred while fetching data'}), 500
+    
+    # Set initial empty choices for program and level
+    form.program.choices = [('', '-- Select Program --')] + [(str(p.id), p.name) for p in programs]
+    form.level.choices = [('', '-- Select Level --')] + [(str(l.id), l.name) for l in levels]
+    form.student.choices = [('', '-- Select Student --')]
+    form.course.choices = [('', '-- Select Course --')]
+    
+    # Handle AJAX requests for dynamic dropdowns
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        program_id = request.form.get('program')
+        level_id = request.form.get('level')
+        
+        if program_id and level_id:
+            # Get students for the selected program and level
+            students = Student.query.filter_by(
+                program_id=program_id,
+                level_id=level_id,
+                archived=False
+            ).all()
+            
+            # Get courses for the selected program
+            program = Program.query.get(program_id)
+            courses = program.courses if program else []
+            
+            return jsonify({
+                'students': [{'id': s.id, 'text': f"{s.full_name} ({s.index_number})"} for s in students],
+                'courses': [{'id': c.id, 'text': f"{c.code} - {c.title}"} for c in courses]
+            })
+        return jsonify({'error': 'Missing parameters'}), 400
+    
+    # Handle form submission
+    if request.method == 'POST' and not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        current_app.logger.info("Processing form submission")
+        current_app.logger.info(f"Form data: {request.form}")
+        
+        # Always set program and level choices
+        form.program.choices = [(p.id, p.name) for p in Program.query.all()]
+        form.level.choices = [(l.id, l.name) for l in Level.query.all()]
+        
+        # Set choices for validation if we have program and level
+        if form.program.data and form.level.data:
+            try:
+                current_app.logger.info(f"Setting choices for program: {form.program.data}, level: {form.level.data}")
+                
+                # Set student choices
+                students = Student.query.filter_by(
+                    program_id=form.program.data, 
+                    level_id=form.level.data, 
+                    archived=False
+                ).all()
+                form.student.choices = [(str(s.id), f"{s.full_name} ({s.index_number})") for s in students]
+                current_app.logger.info(f"Found {len(students)} students")
+                
+                # Set course choices
+                program = Program.query.get(form.program.data)
+                if program:
+                    form.course.choices = [(str(c.id), f"{c.code} - {c.title}") for c in program.courses]
+                    current_app.logger.info(f"Found {len(program.courses)} courses")
+                else:
+                    form.course.choices = []
+                    current_app.logger.warning("No program found for the selected program ID")
+                
+            except Exception as e:
+                current_app.logger.error(f"Error setting choices: {str(e)}", exc_info=True)
+                flash('An error occurred while loading form data', 'error')
+        
+        # Log form validation errors if any
+        if not form.validate():
+            current_app.logger.warning(f"Form validation failed: {form.errors}")
+            flash('Please correct the errors in the form', 'error')
+    
+    if form.validate_on_submit():
+        try:
+            current_app.logger.info("Form validation passed")
+            student_id = form.student.data
+            course_id = form.course.data
+            score = float(form.score.data)
+            semester = form.semester.data
+            academic_year = form.academic_year.data
+            remarks = form.remarks.data if hasattr(form, 'remarks') and form.remarks.data else None
+            
+            current_app.logger.info(f"Processing form submission - Student ID: {student_id}, Course ID: {course_id}, Score: {score}")
+            
+            # Get the student to ensure it exists
+            student = Student.query.get(student_id)
+            if not student:
+                flash('Selected student not found', 'danger')
+                current_app.logger.error(f"Student not found with ID: {student_id}")
+                return redirect(url_for('admin.enter_result'))
+            
+            current_app.logger.info(f"Found student: {student.full_name} ({student.index_number})")
+                
+            # Get the course
+            course = Course.query.get(course_id)
+            if not course:
+                flash('Course not found', 'danger')
+                current_app.logger.error(f"Course not found with ID: {course_id}")
+                return redirect(url_for('admin.enter_result'))
+                
+            current_app.logger.info(f"Found course: {course.code} - {course.title}")
+            
+            # Check if result already exists for this student and course
+            result = Result.query.filter_by(
                 student_id=student_id,
                 course_id=course_id,
-                score=score,
-                grade=grade,
                 semester=semester,
-                academic_year=academic_year,
-                remarks=remarks,
-                uploaded_by=current_user.id,
-                student_level_id=student.level_id  # Store current level
-            )
-            db.session.add(new_result)
+                academic_year=academic_year
+            ).first()
             
-            # Log the creation
-            log = AuditLog(
-                admin_id=current_user.id,
-                action='Create Result',
-                target_type='Result',
-                target_id=new_result.id,
-                details=f'Created result for student ID {student_id}, course ID {course_id}'
-            )
-            db.session.add(log)
-
-        db.session.commit()
-        flash('Result submitted successfully!', 'success')
-        return redirect(url_for('admin.enter_result'))
-
-    # Pass program name for readonly display in template
-    program_name = ''
-    if selected_program:
-        program_obj = Program.query.get(selected_program)
-        program_name = program_obj.name if program_obj else ''
-
-    return render_template(
-        'admin/enter_result.html',
-        form=form,
-        program=program_name,
-        selected_program=selected_program,
-        selected_level=selected_level,
-        levels=levels
-    )
+            if result:
+                # Update existing result
+                result.score = score
+                result.remarks = remarks
+                result.updated_at = datetime.utcnow()
+                db.session.commit()
+                
+                # Log the update
+                log_admin_action(
+                    admin_id=current_user.id,
+                    action='update',
+                    entity_type='result',
+                    entity_id=result.id,
+                    details=f'Updated result for {student.full_name} in {course.code}: {score}%'
+                )
+                
+                flash('Result updated successfully!', 'success')
+                current_app.logger.info(f"Result updated - ID: {result.id}")
+                return redirect(url_for('admin.view_results'))
+            else:
+                # Create new result
+                result = Result(
+                    student_id=student_id,
+                    course_id=course_id,
+                    score=score,
+                    semester=semester,
+                    academic_year=academic_year,
+                    remarks=remarks,
+                    uploaded_by=current_user.id,
+                    grade=calculate_grade(score)  # Calculate grade based on score
+                )
+                
+                db.session.add(result)
+                db.session.commit()
+                
+                # Log the creation
+                log_admin_action(
+                    admin_id=current_user.id,
+                    action='create',
+                    entity_type='result',
+                    entity_id=result.id,
+                    details=f'Created result for {student.full_name} in {course.code}: {score}%'
+                )
+                
+                flash('Result saved successfully!', 'success')
+                current_app.logger.info(f"New result created - ID: {result.id}")
+                return redirect(url_for('admin.view_results'))
+                
+        except Exception as e:
+            db.session.rollback()
+            error_msg = f"An error occurred while saving the result: {str(e)}"
+            flash(error_msg, 'danger')
+            current_app.logger.error(error_msg)
+            current_app.logger.exception(e)
+            return redirect(url_for('admin.enter_result'))
+    elif request.method == 'POST' and not form.validate():
+        # If form validation fails, set the choices again to prevent validation errors
+        form.student.choices = [(s.id, f"{s.full_name} ({s.index_number})") 
+                              for s in Student.query.filter_by(program_id=form.program.data, 
+                                                             level_id=form.level.data, 
+                                                             archived=False).all()]
+        # Get courses associated with the selected program through the many-to-many relationship
+        program = Program.query.get(form.program.data)
+        form.course.choices = [(c.id, f"{c.code} - {c.title}") for c in program.courses] if program else []
+    
+    return render_template('admin/enter_result.html', 
+                         title='Enter Result', 
+                         form=form, 
+                         programs=programs, 
+                         levels=levels,
+                         selected_program=request.args.get('program', ''),
+                         selected_level=request.args.get('level', ''))
 
 @bp.route('/update_result_filters', methods=['POST'])
 @login_required
@@ -1264,6 +1381,9 @@ def edit_result(result_id):
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
     
+    from app.admin.forms import EnterResultForm
+    from app.models import Program, Level, Student, Course, Result, AuditLog
+    
     # Get the result with related data
     result = Result.query.options(
         db.joinedload(Result.student).joinedload(Student.program),
@@ -1274,53 +1394,57 @@ def edit_result(result_id):
         flash('Student not found for this result', 'danger')
         return redirect(url_for('admin.view_results'))
     
-    from app.admin.forms import EnterResultForm
-    
-    # Initialize form
+    # Initialize form with data from the result
     form = EnterResultForm()
     
     # Get all active programs and levels for dropdowns
     programs = Program.query.filter_by(archived=False).all()
     levels = Level.query.filter_by(archived=False).order_by(Level.name).all()
     
-    # Set choices for program and level
-    form.program.choices = [('', '-- Select Program --')] + [(str(p.id), p.name) for p in programs]
-    form.level.choices = [('', '-- Select Level --')] + [(str(l.id), l.name) for l in levels]
+    # Set up the form choices
+    form.program.choices = [(str(p.id), p.name) for p in programs]
+    form.level.choices = [(str(l.id), l.name) for l in levels]
+    
+    # Set up course choices for the student's program
+    courses = []
+    if result.student and result.student.program:
+        courses = result.student.program.courses
+    
+    # Convert courses to choices format and ensure they're strings
+    course_choices = [(str(course.id), f"{course.code} - {course.title}") for course in courses]
+    form.course.choices = course_choices
+    
+    # Set the selected course
+    if result.course_id:
+        form.course.data = str(result.course_id)
     
     # Handle form submission
     if form.validate_on_submit():
         try:
-            # Get the course
-            course_id = form.course.data
-            if not course_id:
-                flash('Please select a course', 'danger')
-                return render_template('admin/enter_result.html', form=form, editing=True)
-                
-            course = Course.query.get(course_id)
-            if not course:
-                flash('Course not found', 'danger')
-                return render_template('admin/enter_result.html', form=form, editing=True)
+            # Get the score and calculate grade
+            score = float(form.score.data)
+            grade = calculate_grade(score)
             
             # Update result
-            result.course_id = course.id
-            result.score = form.score.data
+            result.score = score
+            result.grade = grade
             result.semester = form.semester.data
             result.academic_year = form.academic_year.data
             result.remarks = form.remarks.data
-            result.grade = calculate_grade(float(form.score.data))
+            result.uploaded_by = current_user.id
+            result.uploaded_at = datetime.utcnow()
             
             # Log the update
-            from app.models import AuditLog
             log = AuditLog(
                 admin_id=current_user.id,
-                action='Edit Result',
+                action='Update Result',
                 target_type='Result',
                 target_id=result.id,
-                details=f'Edited result for student {result.student.index_number}, course {course.code}'
+                details=f'Updated result for {result.student.index_number} - {result.course.code} (Score: {score})'
             )
             db.session.add(log)
-            db.session.commit()
             
+            db.session.commit()
             flash('Result updated successfully!', 'success')
             return redirect(url_for('admin.view_results'))
             
@@ -1330,24 +1454,17 @@ def edit_result(result_id):
             flash('An error occurred while updating the result', 'danger')
     
     # Prefill form with existing result data (GET request)
-    form.index_number.data = result.student.index_number
-    
     # Set program and level based on student's current program
-    if result.student.program:
-        form.program.data = str(result.student.program.id)
-        
-        # Set course choices based on program
-        courses = result.student.program.courses
-        form.course.choices = [(str(c.id), f"{c.code} - {c.title}") for c in courses]
-        
-        if result.course:
-            form.course.data = str(result.course.id)
+    program = result.student.program
+    level = result.student.level
     
-    # Set level if available
-    if hasattr(result.student, 'level_id') and result.student.level_id:
-        form.level.data = str(result.student.level_id)
+    # Get courses for the program
+    courses = program.courses if program else []
     
-    # Set other fields
+    # Set form data
+    form.program.data = str(program.id) if program else ''
+    form.level.data = str(level.id) if level else ''
+    form.course.data = str(result.course_id) if result.course_id else ''
     form.score.data = result.score
     form.semester.data = result.semester
     form.academic_year.data = result.academic_year
@@ -1357,15 +1474,17 @@ def edit_result(result_id):
     context = {
         'form': form,
         'editing': True,
-        'result_id': result_id,  # Add this line to include result_id in the context
+        'result_id': result_id,
         'programs': programs,
         'student_name': result.student.full_name,
         'student_index': result.student.index_number,
         'levels': levels,
-        'selected_program': str(result.student.program.id) if result.student.program else None,
-        'selected_level': str(result.student.level_id) if hasattr(result.student, 'level_id') and result.student.level_id else None,
-        'program': result.student.program,
-        'courses': [(str(c.id), f"{c.code} - {c.title}") for c in result.student.program.courses] if result.student.program else []
+        'selected_program': str(program.id) if program else None,
+        'selected_level': str(level.id) if level else None,
+        'program': program,
+        'courses': [(str(c.id), f"{c.code} - {c.title}") for c in courses],
+        'selected_course': str(result.course_id) if result.course_id else None,
+        'title': 'Edit Result'
     }
     
     return render_template('admin/enter_result.html', **context)
@@ -1678,16 +1797,17 @@ def add_student():
             # Generate a random password if not provided
             password = form.password.data or User.generate_random_password()
             
-            # Generate username from email (first part before @)
-            username = form.email.data.split('@')[0].lower()
+            # Use the provided username or generate from email if not provided
+            username = form.username.data.lower() if form.username.data else form.email.data.split('@')[0].lower()
             
             # Create user
             user = User(
                 username=username,
                 email=form.email.data.lower(),
-                user_type='student',
-                password_hash=generate_password_hash(password, method='pbkdf2:sha256')
+                user_type='student'
             )
+            # Set password using the model's method for consistent hashing
+            user.set_password(password)
             db.session.add(user)
             db.session.flush()  # Get user.id before commit
             logger.debug(f"Created user with ID: {user.id}")
