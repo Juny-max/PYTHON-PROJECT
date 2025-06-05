@@ -1,10 +1,15 @@
-from flask import render_template, flash, redirect, url_for, request
-from flask_login import login_user, logout_user, current_user
+import os
+from datetime import datetime, timedelta
+from flask import render_template, flash, redirect, url_for, request, current_app
+from flask_login import login_user, logout_user, current_user, login_required
 from urllib.parse import urlparse
+from werkzeug.security import generate_password_hash
+import jwt
 from app import db
 from app.auth import bp
-from app.auth.forms import LoginForm, RegistrationForm
-from app.models import User, Student
+from app.auth.forms import LoginForm, RegistrationForm, RequestResetForm, ResetPasswordForm
+from app.models import User, Student, AuditLog
+from app.utils.email import send_password_reset_email
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -92,3 +97,79 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for('index'))
+
+
+def get_reset_token(user, expires_sec=3600):
+    """Generate a JWT token for password reset."""
+    payload = {
+        'user_id': user.id,
+        'exp': datetime.utcnow() + timedelta(seconds=expires_sec)
+    }
+    return jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
+
+
+def verify_reset_token(token):
+    """Verify the password reset token and return the user if valid."""
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_id = payload.get('user_id')
+        return User.query.get(user_id)
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+
+
+@bp.route('/reset_password_request', methods=['GET', 'POST'])
+def reset_password_request():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    form = RequestResetForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if user:
+            try:
+                send_password_reset_email(user)
+                flash('An email has been sent with instructions to reset your password.', 'info')
+                return redirect(url_for('auth.login'))
+            except Exception as e:
+                current_app.logger.error(f'Error sending password reset email: {str(e)}')
+                flash('An error occurred while sending the password reset email. Please try again later.', 'danger')
+        else:
+            # Don't reveal that the email doesn't exist for security reasons
+            flash('If an account exists with this email, you will receive a password reset link.', 'info')
+            return redirect(url_for('auth.login'))
+    
+    return render_template('auth/reset_password_request.html', title='Reset Password', form=form)
+
+
+@bp.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    user = verify_reset_token(token)
+    if not user:
+        flash('That is an invalid or expired token', 'warning')
+        return redirect(url_for('auth.reset_password_request'))
+    
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        # Update the user's password
+        user.password_hash = generate_password_hash(form.password.data, method='pbkdf2:sha256')
+        db.session.commit()
+        
+        # Log the password reset
+        log = AuditLog(
+            admin_id=user.id,  # self-initiated
+            action='Password Reset',
+            target_type='User',
+            target_id=user.id,
+            details='User reset their password via email'
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        flash('Your password has been updated! You are now able to log in.', 'success')
+        return redirect(url_for('auth.login'))
+    
+    return render_template('auth/reset_password.html', title='Reset Password', form=form)

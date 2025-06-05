@@ -51,6 +51,31 @@ class User(UserMixin, db.Model):
     def is_admin(self):
         return self.user_type == 'admin'
 
+# Association table for many-to-many relationship between Program and Course
+program_courses = db.Table('program_courses',
+    db.Column('program_id', db.Integer, db.ForeignKey('programs.id'), primary_key=True),
+    db.Column('course_id', db.Integer, db.ForeignKey('courses.id'), primary_key=True)
+)
+
+class Program(db.Model):
+    __tablename__ = 'programs'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.String(255))
+    archived = db.Column(db.Boolean, default=False, nullable=False)
+    courses = db.relationship('Course', secondary=program_courses, back_populates='programs')
+    students = db.relationship('Student', backref='program', lazy=True)
+
+class Level(db.Model):
+    __tablename__ = 'levels'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20), unique=True, nullable=False)
+    description = db.Column(db.String(100))
+    archived = db.Column(db.Boolean, default=False, nullable=False)
+
+    def __repr__(self):
+        return f'<Level {self.name}>'
+
 class Student(db.Model):
     __tablename__ = 'students'
     
@@ -58,10 +83,11 @@ class Student(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
     index_number = db.Column(db.String(20), unique=True, nullable=False)
     full_name = db.Column(db.String(100), nullable=False)
-    program = db.Column(db.String(100), nullable=False)
-    level = db.Column(db.String(20), nullable=False)
+    program_id = db.Column(db.Integer, db.ForeignKey('programs.id'), nullable=False)
+    level_id = db.Column(db.Integer, db.ForeignKey('levels.id'), nullable=False)  # Corrected
     archived = db.Column(db.Boolean, default=False, nullable=False)
     results = db.relationship('Result', backref='student', lazy=True)
+    level = db.relationship('Level', backref='students', lazy=True)  # Corrected
 
     GRADE_POINTS = {
         'A': 4.0,
@@ -89,6 +115,8 @@ class Student(db.Model):
         total_points = 0
         total_credits = 0
         for r in latest_results.values():
+            if not r.course:
+                continue  # skip if course is missing
             gp = self.GRADE_POINTS.get(r.grade, 0.0)
             ch = r.course.credit_hours
             total_points += gp * ch
@@ -130,25 +158,13 @@ class Student(db.Model):
         total_points = 0
         total_credits = 0
         for r in latest_results.values():
+            if not r.course:
+                continue  # skip if course is missing
             gp = self.GRADE_POINTS.get(r.grade, 0.0)
             ch = r.course.credit_hours
             total_points += gp * ch
             total_credits += ch
         return round(total_points / total_credits, 2) if total_credits else 0.0
-
-# Association table for many-to-many relationship between Program and Course
-program_courses = db.Table('program_courses',
-    db.Column('program_id', db.Integer, db.ForeignKey('programs.id'), primary_key=True),
-    db.Column('course_id', db.Integer, db.ForeignKey('courses.id'), primary_key=True)
-)
-
-class Program(db.Model):
-    __tablename__ = 'programs'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    description = db.Column(db.String(255))
-    archived = db.Column(db.Boolean, default=False, nullable=False)
-    courses = db.relationship('Course', secondary=program_courses, back_populates='programs')
 
 class Course(db.Model):
     __tablename__ = 'courses'

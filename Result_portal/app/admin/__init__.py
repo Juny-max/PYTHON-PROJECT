@@ -1,5 +1,5 @@
-from flask import Blueprint
+from app.admin.routes import bp
 
-bp = Blueprint('admin', __name__)
-
-from app.admin import routes
+# Import routes at the bottom to avoid circular imports
+if __name__ == 'app.admin':
+    from app.admin import routes

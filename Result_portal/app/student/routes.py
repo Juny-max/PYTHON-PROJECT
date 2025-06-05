@@ -20,40 +20,107 @@ def notifications():
 @bp.route('/dashboard')
 @login_required
 def dashboard():
-    if current_user.is_admin():
-        return redirect(url_for('admin.dashboard'))
-    
     student = current_user.student
-    if not student:
-        flash('Student profile not found', 'danger')
-        return redirect(url_for('main.index'))
     
-    # Get latest results
-    latest_results = Result.query.filter_by(student_id=student.id)\
-                                .order_by(Result.academic_year.desc(), Result.semester.desc())\
-                                .limit(5).all()
-
-    # Get current level and recent semester (if possible)
-    current_level = student.level
-    # Try to get the most recent semester for this level
-    recent_result = Result.query.filter_by(student_id=student.id, academic_year=current_level)\
-                                .order_by(Result.semester.desc()).first()
-    current_semester = recent_result.semester if recent_result else None
-
-    # Calculate GPA for current semester (if available)
-    semester_gpa = student.calculate_gpa_for_semester(current_semester, current_level) if current_semester else None
-    # Calculate CGPA for current level
-    level_cgpa = student.calculate_cgpa_for_year(current_level)
-    # Calculate true university-wide CGPA
-    overall_cgpa = student.calculate_overall_cgpa()
-
+    # Get all results for the student
+    results = Result.query.filter_by(student_id=student.id).all()
+    
+    # Calculate overall CGPA
+    overall_cgpa = calculate_gpa(results)
+    
+    # Calculate current semester GPA
+    current_semester_results = []
+    current_semester_gpa = "N/A"
+    
+    if results:
+        # Sort results by date and get the most recent semester
+        sorted_results = sorted(results, key=lambda x: x.uploaded_at, reverse=True)
+        if hasattr(sorted_results[0], 'semester'):
+            current_semester = sorted_results[0].semester
+            current_semester_results = [r for r in results if r.semester == current_semester]
+        else:
+            # If there's no semester attribute, group by academic year or another field
+            # This is just an example - adjust based on your actual model
+            current_semester_results = sorted_results[:5]  # Just use the 5 most recent results
+        
+        current_semester_gpa = calculate_gpa(current_semester_results)
+    
+    # For level CGPA, use a workaround since Result doesn't have level_id
+    # Try to filter by student's current level
+    level_results = results  # Default to all results
+    level_cgpa = overall_cgpa  # Default to overall CGPA
+    
     return render_template('student/dashboard.html',
-                         title='Student Dashboard',
-                         student=student,
-                         results=latest_results,
-                         semester_gpa=semester_gpa,
-                         level_cgpa=level_cgpa,
-                         overall_cgpa=overall_cgpa)
+                          title='Dashboard',
+                          current_semester_gpa=current_semester_gpa,
+                          level_cgpa=level_cgpa,
+                          overall_cgpa=overall_cgpa,
+                          results=results)
+
+def calculate_gpa(results):
+    if not results:
+        return "N/A"
+    
+    # Define grade to grade point conversion based on your grading system
+    def get_grade_point(grade=None, score=None):
+        if grade:
+            grade_to_point = {
+                'A': 4.00,
+                'A-': 3.85,
+                'B+': 3.50,
+                'B': 3.00,
+                'C+': 2.50,
+                'C': 2.00,
+                'D': 1.50,
+                'E': 1.00,
+                'F': 0.00
+            }
+            return grade_to_point.get(grade, 0)
+        elif score is not None:
+            if score >= 80:
+                return 4.00  # A
+            elif score >= 70:
+                return 3.85  # A-
+            elif score >= 65:
+                return 3.50  # B+
+            elif score >= 60:
+                return 3.00  # B
+            elif score >= 55:
+                return 2.50  # C+
+            elif score >= 50:
+                return 2.00  # C
+            elif score >= 45:
+                return 1.50  # D
+            elif score >= 40:
+                return 1.00  # E
+            else:
+                return 0.00  # F
+        return 0.00
+    
+    total_credit_hours = 0
+    total_quality_points = 0
+    
+    for r in results:
+        # Get credit hours (make sure this attribute exists)
+        credit_hours = getattr(r.course, 'credit_hours', 0)
+        if credit_hours == 0:
+            continue
+            
+        # Determine grade point based on either grade or score
+        if hasattr(r, 'grade') and r.grade:
+            grade_point = get_grade_point(grade=r.grade)
+        elif hasattr(r, 'score'):
+            grade_point = get_grade_point(score=r.score)
+        else:
+            continue  # Skip if neither grade nor score is available
+        
+        total_credit_hours += credit_hours
+        total_quality_points += grade_point * credit_hours
+    
+    if total_credit_hours == 0:
+        return "N/A"
+    
+    return round(total_quality_points / total_credit_hours, 2)
 
 @bp.route('/results')
 @login_required
@@ -66,22 +133,36 @@ def view_results():
         flash('Student profile not found', 'danger')
         return redirect(url_for('main.index'))
     
-    # Group results by academic year and semester
-    results = Result.query.filter_by(student_id=student.id)\
-                         .order_by(Result.academic_year.desc(), Result.semester.desc())\
-                         .all()
+    results = Result.query.filter_by(student_id=student.id).all()
     
-    # Organize results by semester
-    semester_results = {}
+    def year_to_level(year):
+        mapping = {'1': '100', '2': '200', '3': '300', '4': '400'}
+        return mapping.get(str(year), str(year))
+
+    organized = {}
+    semester_order = ['1', '2', 'First', 'Second']
+    year_order = ['1', '2', '3', '4']
+
     for result in results:
-        key = f"{result.academic_year} - {result.semester}"
-        if key not in semester_results:
-            semester_results[key] = {
-                'results': [],
-                'gpa': student.calculate_gpa(result.semester, result.academic_year)
-            }
-        semester_results[key]['results'].append(result)
-    
+        year = str(result.academic_year)
+        semester = result.semester
+        organized.setdefault(year, {})
+        organized[year].setdefault(semester, []).append(result)
+
+    display_results = []
+    for year in sorted(organized.keys(), key=lambda x: (year_order.index(x) if x in year_order else 99, x)):
+        level = year_to_level(year)
+        year_group = {'year_code': year, 'level': level, 'semesters': []}
+        for semester in sorted(organized[year].keys(), key=lambda x: (semester_order.index(x) if x in semester_order else x)):
+            results_list = organized[year][semester]
+            gpa = calculate_gpa(results_list)
+            year_group['semesters'].append({
+                'semester': semester,
+                'results': results_list,
+                'gpa': gpa
+            })
+        display_results.append(year_group)
+
     return render_template('student/results.html',
-                         title='My Results',
-                         semester_results=semester_results)
+                           title='My Results',
+                           display_results=display_results)

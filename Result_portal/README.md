@@ -45,6 +45,28 @@ student_result_portal/
 └── run.py
 ```
 
+## Database Structure
+
+- MySQL database with proper relationships
+- Tables for:
+  - Users (Admin/Student)
+  - Students
+  - Results
+  - Courses
+  - Programs
+  - Audit Logs
+  - Notifications
+  - Messages
+  - Reports
+
+### Key Database Features
+- GPA calculations
+- Level-based CGPA tracking
+- Semester-based result management
+- Program and course relationships
+- User authentication data
+- Audit trail for admin actions
+
 ## Setup Instructions
 
 This guide will help you set up and use the Student Result Portal, even if you close everything and want to start again later. Each step is explained for clarity.
@@ -159,7 +181,48 @@ If you close everything and want to start again:
 
 ---
 
-### 8. Accessing Routes
+### 8. Create an Admin Account
+To create an admin account, you'll need to run a Python script in the Flask shell. Follow these steps:
+
+1. Make sure your virtual environment is activated and all dependencies are installed.
+2. Set the Flask app environment variable if you haven't already:
+   ```bash
+   # On Windows CMD:
+   set FLASK_APP=app:create_app
+   
+   # On PowerShell:
+   $env:FLASK_APP = "app:create_app"
+   
+   # On macOS/Linux:
+   export FLASK_APP=app:create_app
+   ```
+3. Open the Flask shell by running:
+   ```bash
+   python -m flask shell
+   ```
+4. In the Flask shell, copy and paste the following code (make sure to replace `your_secure_password` with a strong password):
+   ```python
+   from app import create_app, db
+   from app.models import User
+   from werkzeug.security import generate_password_hash
+
+   app = create_app()
+   with app.app_context():
+       admin = User(
+           username='admin',
+           email='admin@example.com',
+           password_hash=generate_password_hash('your_secure_password', method='pbkdf2:sha256'),
+           user_type='admin'
+       )
+       db.session.add(admin)
+       db.session.commit()
+       print("Admin account created successfully!")
+   ```
+5. Type `exit()` to exit the Flask shell.
+
+You can now log in to the admin dashboard using the credentials you just created.
+
+### 9. Accessing Routes
 - Home: `/`
 - Auth: `/auth/login`, `/auth/register`
 - Admin: `/admin/dashboard`
@@ -175,12 +238,26 @@ If you close everything and want to start again:
 ---
 
 ## Features
-- Modular Flask blueprints for auth, admin, and student logic
-- WTForms for secure form handling
-- Environment variable management with `.env` files
-- Professional folder structure for scalability
-- Static files for CSS/JS
-- Ready-to-use templates for all major pages
+
+- Secure user authentication (login/logout)
+- Role-based access control (Admin/Student)
+- Student profile management
+- Course and program management
+- Result upload and management
+- Student dashboard with GPA calculations
+- Admin dashboard with student management
+- Secure file uploads for results
+- Audit logging for admin actions
+- Professional UI/UX with:
+  - Modern gradient backgrounds
+  - Animated floating shapes
+  - Consistent iconography
+  - Responsive design
+  - Clean, centered layouts
+  - Subtle footer on main pages
+  - Modern card designs with shadows
+  - Bootstrap 5 with custom styling
+  - Smooth animations and transitions for all major pages
 
 ### Modern Admin Result Entry Workflow
 - **Step-by-step Filtering:** Admins now enter results using a multi-step process:

@@ -1,0 +1,21 @@
+Welcome to Student Result Portal
+
+Dear {{ user.full_name }},
+
+Welcome to the Student Result Portal! We're excited to have you on board.
+
+Your account has been created successfully. Here are your login details:
+
+Username: {{ user.username }}
+{% if password %}
+Password: {{ password }}
+
+Please change your password after your first login for security reasons.
+{% endif %}
+
+You can now log in to the portal at: {{ url_for('auth.login', _external=True) }}
+
+If you have any questions or need assistance, please don't hesitate to contact our support team.
+
+Best regards,
+The Student Result Portal Team

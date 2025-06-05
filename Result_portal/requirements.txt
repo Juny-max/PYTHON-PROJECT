@@ -3,3 +3,4 @@ Flask-Migrate
 Flask-SQLAlchemy
 python-dotenv
 PyMySQL
+Flask-Mail

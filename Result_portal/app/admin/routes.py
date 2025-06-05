@@ -1,14 +1,61 @@
-from flask import render_template, flash, redirect, url_for, request, current_app
+from flask import render_template, flash, redirect, url_for, request, current_app, url_for
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 import os
 import csv
 from datetime import datetime
+from flask import Blueprint
 from app import db
-from app.admin import bp
-from app.admin.forms import UploadResultsForm, AddCourseForm
-from app.models import db, User, Student, Course, Result
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
+
+from app.admin.forms import UploadResultsForm, AddCourseForm, EditStudentForm, EnterResultForm, StudentSearchForm
+from app.models import User, Student, Course, Result, Program, Level, AuditLog
 from app.utils import allowed_file
+from app.utils.email import send_welcome_email
+#from app.models import ProgramCourse
+
+# Create and configure the admin blueprint
+bp = Blueprint('admin', __name__)
+
+@bp.route('/dashboard')
+@login_required
+def dashboard():
+    if not current_user.is_admin():
+        return redirect(url_for('main.index'))
+    
+    # Total students count (not archived)
+    total_students = Student.query.filter_by(archived=0).count()
+
+    # Programs and student counts
+    program_counts = (
+        db.session.query(Program, func.count(Student.id))
+        .outerjoin(Student, (Student.program_id == Program.id) & (Student.archived == 0))
+        .group_by(Program.id)
+        .all()
+    )
+
+    # Recent results with related info
+    recent_results = (
+        db.session.query(Result)
+        .join(Student, Result.student_id == Student.id)
+        .join(Program, Student.program_id == Program.id)
+        .join(Course, Result.course_id == Course.id)
+        .order_by(Result.uploaded_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    return render_template(
+        'admin/dashboard.html',
+        total_students=total_students,
+        program_counts=program_counts,
+        recent_results=recent_results,
+        student_count=total_students,  # if used elsewhere
+        archived_count=Student.query.filter_by(archived=1).count(),
+        program_count=Program.query.count(),
+        course_count=Course.query.count()
+    )
 
 @bp.route('/audit_logs')
 @login_required
@@ -19,19 +66,18 @@ def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
     return render_template('admin/audit_logs.html', logs=logs)
 
-@bp.route('/dashboard')
-@login_required
-def dashboard():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
     total_students = Student.query.count()
     total_courses = Course.query.count()
-    recent_results = Result.query.order_by(Result.uploaded_at.desc()).limit(5).all()
-
+    
+    # Get recent results with program names
+    recent_results = Result.query.join(Student).join(Program).order_by(Result.uploaded_at.desc()).limit(5).all()
+    
     # Get all programs and count of students per program (excluding archived)
     program_counts = db.session.query(
-        Student.program, db.func.count(Student.id)
-    ).filter_by(archived=False).group_by(Student.program).all()
+        Program.name, db.func.count(Student.id)
+    ).join(Student, Program.id == Student.program_id).filter(Student.archived == False).group_by(Program.name).all()
 
     return render_template('admin/dashboard.html', 
                          title='Admin Dashboard',
@@ -199,7 +245,7 @@ def manage_programs(program_id=None):
     all_courses = Course.query.all()
     selected_program = Program.query.get(program_id) if program_id else None
     # Find unique student programs not yet in Program table
-    student_programs = set([s.program for s in Student.query.with_entities(Student.program).distinct() if s.program])
+    student_programs = set([s.program.name for s in Student.query.join(Program).distinct() if s.program])
     program_names = set([p.name for p in programs] + [p.name for p in archived_programs])
     missing_programs = sorted(list(student_programs - program_names))
     return render_template('admin/manage_courses.html', title='Manage Programs',
@@ -405,92 +451,118 @@ def add_course():
 @bp.route('/enter_result', methods=['GET', 'POST'])
 @login_required
 def enter_result():
-    if not current_user.is_admin():
-        return redirect(url_for('main.index'))
-
-    from app.admin.forms import EnterResultForm
-    # Get all programs and levels
-    from app.models import Program
-    programs = Program.query.filter_by(archived=False).all()
-    levels = ['100', '200', '300', '400']
-
-    # Get selected program/level/student from form or query params
-    selected_program = request.form.get('program') or request.args.get('program') or ''
-    selected_level = request.form.get('level') or request.args.get('level') or ''
-    selected_index = request.form.get('index_number') or request.args.get('index_number') or ''
-
-    # Filter students by program ID and level
-    students_query = Student.query.filter_by(archived=False)
-    if selected_program:
-        # Find the selected program object by ID
-        selected_program_obj = next((p for p in programs if str(p.id) == str(selected_program)), None)
-        selected_program_name = selected_program_obj.name if selected_program_obj else ''
-        students_query = students_query.filter_by(program=selected_program_name)
-    else:
-        selected_program_obj = None
-        selected_program_name = ''
-    if selected_level:
-        students_query = students_query.filter_by(level=selected_level)
-    filtered_students = students_query.order_by(Student.index_number).all()
-    student_choices = [(s.index_number, f"{s.index_number} - {s.full_name}") for s in filtered_students]
-
-    selected_student = Student.query.filter_by(index_number=selected_index).first() if selected_index else None
-    # Show the program name in the readonly input
-    program = selected_program_obj.name if selected_program_obj else (selected_student.program if selected_student else '')
-
-    # Show all courses for now (future: filter by level/program if Course model updated)
-    if selected_student:
-        courses = Course.query.order_by(Course.code).all()
-    else:
-        courses = []
-    course_choices = [(c.code, f"{c.code} - {c.title}") for c in courses]
-
-    # Build form
     form = EnterResultForm()
-    form.index_number.choices = student_choices
-    form.course_code.choices = course_choices
-    form.program.data = program
 
-    # If POST and valid, save result
+    # Populate program and level choices
+    programs = Program.query.filter_by(archived=False).all()
+    levels = Level.query.filter_by(archived=False).all()
+    form.program.choices = [(p.id, p.name) for p in programs]
+    form.level.choices = [(l.id, l.name) for l in levels]
+
+    selected_program = request.form.get('program', type=int)
+    selected_level = request.form.get('level', type=int)
+
+    # Populate students based on selected program and level
+    if selected_program and selected_level:
+        students = Student.query.filter_by(
+            program_id=selected_program,
+            level_id=selected_level,
+            archived=False
+        ).all()
+        form.student.choices = [(s.id, f"{s.full_name} ({s.index_number})") for s in students]
+    else:
+        form.student.choices = []
+
+    # Populate courses based on selected program
+    if selected_program:
+        program = Program.query.get(selected_program)
+        courses = program.courses if program else []
+        form.course.choices = [(c.id, f"{c.code} - {c.title}") for c in courses]
+    else:
+        form.course.choices = []
+
+    # Handle form submission
     if form.validate_on_submit():
-        student = Student.query.filter_by(index_number=form.index_number.data).first()
-        course = Course.query.filter_by(code=form.course_code.data).first()
-        if not student or not course:
-            flash('Student or Course not found', 'danger')
-            return render_template('admin/enter_result.html', form=form, program=program, courses=course_choices, programs=programs, levels=levels, selected_program=selected_program, selected_level=selected_level)
-        result = Result(
-            student_id=student.id,
-            course_id=course.id,
-            score=form.score.data,
-            semester=form.semester.data,
-            academic_year=form.academic_year.data,
-            remarks=form.remarks.data,
-            uploaded_by=current_user.id
-        )
-        result.grade = result.determine_grade()
-        db.session.add(result)
+        student_id = form.student.data
+        course_id = form.course.data
+        score = form.score.data
+        semester = form.semester.data
+        academic_year = form.academic_year.data
+        remarks = form.remarks.data
+
+        # Check if result exists for this student, course, semester, and academic year
+        existing_result = Result.query.filter_by(
+            student_id=student_id,
+            course_id=course_id,
+            semester=semester,
+            academic_year=academic_year
+        ).first()
+
+        grade = calculate_grade(score)
+
+        if existing_result:
+            # Update existing result
+            existing_result.score = score
+            existing_result.grade = grade
+            existing_result.remarks = remarks
+        else:
+            # Create new result
+            new_result = Result(
+                student_id=student_id,
+                course_id=course_id,
+                score=score,
+                grade=grade,
+                semester=semester,
+                academic_year=academic_year,
+                remarks=remarks,
+                uploaded_by=current_user.id
+            )
+            db.session.add(new_result)
+
         db.session.commit()
-        # Log audit
-        from app.models import AuditLog
-        log = AuditLog(admin_id=current_user.id, action='Enter Result', target_type='Result', target_id=result.id, details=f'Entered result for student {student.index_number}, course {course.code}')
-        db.session.add(log)
-        db.session.commit()
-        flash('Result entered successfully!', 'success')
+        flash('Result submitted successfully!', 'success')
         return redirect(url_for('admin.enter_result'))
 
-    return render_template('admin/enter_result.html',
+    # Pass program name for readonly display in template
+    program_name = ''
+    if selected_program:
+        program_obj = Program.query.get(selected_program)
+        program_name = program_obj.name if program_obj else ''
+
+    return render_template(
+        'admin/enter_result.html',
         form=form,
-        program=program,
-        courses=course_choices,
-        programs=programs,
-        levels=levels,
+        program=program_name,
         selected_program=selected_program,
-        selected_level=selected_level)
+        selected_level=selected_level,
+    )
+
+def calculate_grade(score):
+    if score >= 80:
+        return 'A'
+    elif score >= 70:
+        return 'A-'
+    elif score >= 65:
+        return 'B+'
+    elif score >= 60:
+        return 'B'
+    elif score >= 55:
+        return 'C+'
+    elif score >= 50:
+        return 'C'
+    elif score >= 45:
+        return 'D'
+    elif score >= 40:
+        return 'E'
+    else:
+        return 'F'
 
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
     results = Result.query.order_by(Result.uploaded_at.desc()).all()
     return render_template('admin/view_results.html', results=results)
+
+
 
 @bp.route('/edit_result/<int:result_id>', methods=['GET', 'POST'])
 @login_required
@@ -558,9 +630,10 @@ def view_results():
     # Query students based on filters
     students_query = Student.query.filter_by(archived=False)
     if selected_program:
-        students_query = students_query.filter_by(program=selected_program)
+        if selected_program != '':  # '' means 'All'
+            students_query = students_query.join(Program).filter(Program.name == selected_program)
     if selected_level:
-        students_query = students_query.filter_by(level=selected_level)
+        students_query = students_query.filter(Student.level == selected_level)
     students = students_query.all()
 
     # Gather results for these students
@@ -607,25 +680,26 @@ def manage_students():
     
     from app.admin.forms import ManageStudentForm
     form = ManageStudentForm()
-    students = Student.query
+    query = Student.query.options(  # Use a query object
+        joinedload(Student.level),
+        joinedload(Student.program)
+    ).filter_by(archived=False)
     if form.validate_on_submit():
         if form.index_number.data:
-            students = students.filter(Student.index_number.ilike(f"%{form.index_number.data}%"))
+            query = query.filter(Student.index_number.ilike(f"%{form.index_number.data}%"))
         if form.full_name.data:
-            students = students.filter(Student.full_name.ilike(f"%{form.full_name.data}%"))
+            query = query.filter(Student.full_name.ilike(f"%{form.full_name.data}%"))
         if form.program.data:
-            students = students.filter(Student.program.ilike(f"%{form.program.data}%"))
+            query = query.filter(Student.program.ilike(f"%{form.program.data}%"))
         if form.level.data and form.level.data != '':
-            students = students.filter_by(level=form.level.data)
+            query = query.filter_by(level=form.level.data)
         if form.status.data == 'active':
-            students = students.filter_by(archived=False)
+            query = query.filter_by(archived=False)
         elif form.status.data == 'archived':
-            students = students.filter_by(archived=True)
-        students = students.all()
-        if not students:
-            flash('No students found for the selected criteria.', 'warning')
-    else:
-        students = students.filter_by(archived=False).all()
+            query = query.filter_by(archived=True)
+    students = query.all()  # Apply .all() only once, after all filters
+    if not students:
+        flash('No students found for the selected criteria.', 'warning')
     return render_template('admin/manage_students.html', 
                          title='Manage Students',
                          students=students,
@@ -636,36 +710,116 @@ def manage_students():
 def add_student():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
+        
     from app.admin.forms import AddEditStudentForm
+    from app.models import User, AuditLog
+    from werkzeug.security import generate_password_hash
+    from sqlalchemy.exc import IntegrityError
+    
     form = AddEditStudentForm()
+    
     if form.validate_on_submit():
-        # Create user first
-        from app.models import User, AuditLog
-        from werkzeug.security import generate_password_hash
-        user = User(
-            username=form.index_number.data,
-            email=f"{form.index_number.data}@student.portal",  # placeholder, change as needed
-            user_type='student',
-            password_hash=generate_password_hash(form.password.data, method='pbkdf2:sha256')
-        )
-        db.session.add(user)
-        db.session.flush()  # get user.id before commit
-        student = Student(
-            user_id=user.id,
-            index_number=form.index_number.data,
-            full_name=form.full_name.data,
-            program=form.program.data,
-            level=form.level.data,
-            archived=False
-        )
-        db.session.add(student)
-        db.session.commit()
-        # Log audit
-        log = AuditLog(admin_id=current_user.id, action='Add Student', target_type='Student', target_id=student.id, details=f'Added student {student.full_name} ({student.index_number})')
-        db.session.add(log)
-        db.session.commit()
-        flash('Student added successfully!', 'success')
-        return redirect(url_for('admin.manage_students'))
+        # Check if username or email already exists
+        existing_user = User.query.filter(
+            (User.username == form.index_number.data) | 
+            (User.email == form.email.data)
+        ).first()
+        
+        if existing_user:
+            if existing_user.username == form.index_number.data:
+                flash(f'Username {form.index_number.data} is already taken!', 'danger')
+            if existing_user.email == form.email.data:
+                flash(f'Email {form.email.data} is already registered!', 'danger')
+            return render_template('admin/add_edit_student.html', form=form, editing=False)
+        
+        try:
+            # Generate a random password if none provided
+            password = form.password.data
+            if not password or password.strip() == '':
+                import random
+                import string
+                # Generate an 8-character password with letters, digits, and special characters
+                characters = string.ascii_letters + string.digits + '!@#$%^&*'
+                password = ''.join(random.choice(characters) for _ in range(8))
+            
+            # Create user with the generated or provided password
+            user = User(
+                username=form.index_number.data,
+                email=form.email.data,
+                user_type='student',
+                password_hash=generate_password_hash(password, method='pbkdf2:sha256')
+            )
+            db.session.add(user)
+            db.session.flush()  # Get user.id before commit
+            
+            # Get the program object
+            program = Program.query.get(form.program.data)
+            if not program:
+                db.session.rollback()
+                flash('Selected program not found', 'error')
+                return redirect(url_for('admin.add_student'))
+            
+            # Get or create the level
+            level_name = form.level.data
+            level = Level.query.filter_by(name=level_name).first()
+            if not level:
+                # Create the level if it doesn't exist
+                level = Level(name=level_name, description=f'Level {level_name}')
+                db.session.add(level)
+                db.session.flush()  # Get the level ID
+            
+            # Create student record
+            student = Student(
+                user_id=user.id,
+                index_number=form.index_number.data,
+                full_name=form.full_name.data,
+                program_id=program.id,
+                level_id=level.id,
+                archived=False
+            )
+            db.session.add(student)
+            
+            # Log audit
+            log = AuditLog(
+                admin_id=current_user.id,
+                action='Add Student',
+                target_type='Student',
+                target_id=student.id,
+                details=f'Added student {student.full_name} ({student.index_number})'
+            )
+            db.session.add(log)
+            
+            db.session.commit()
+            
+            # Send welcome email with login credentials
+            try:
+                send_welcome_email(user, form.password.data)
+                log.details += ' and sent welcome email'
+                db.session.commit()
+                flash('Student added successfully and welcome email sent!', 'success')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f'Failed to send welcome email: {str(e)}')
+                log.details += ' (email sending failed)'
+                db.session.commit()
+                flash('Student added but failed to send welcome email. Please notify the student manually.', 'warning')
+            
+            return redirect(url_for('admin.manage_students'))
+            
+        except IntegrityError as e:
+            db.session.rollback()
+            if 'duplicate entry' in str(e).lower() and 'username' in str(e).lower():
+                flash(f'Username {form.index_number.data} is already taken!', 'danger')
+            elif 'duplicate entry' in str(e).lower() and 'email' in str(e).lower():
+                flash(f'Email {form.email.data} is already registered!', 'danger')
+            else:
+                current_app.logger.error(f'Error adding student: {str(e)}')
+                flash('An error occurred while adding the student. Please try again.', 'danger')
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f'Unexpected error adding student: {str(e)}')
+            flash('An unexpected error occurred. Please try again.', 'danger')
+    
     return render_template('admin/add_edit_student.html', form=form, editing=False)
 
 @bp.route('/edit_student/<int:student_id>', methods=['GET', 'POST'])
@@ -673,28 +827,63 @@ def add_student():
 def edit_student(student_id):
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
+    
     student = Student.query.get_or_404(student_id)
-    from app.admin.forms import AddEditStudentForm
-    form = AddEditStudentForm(obj=student)
+    form = EditStudentForm()
+    
     if form.validate_on_submit():
-        student.index_number = form.index_number.data
-        student.full_name = form.full_name.data
-        student.program = form.program.data
-        student.level = form.level.data
-        db.session.commit()
-        # Log audit
-        from app.models import AuditLog
-        log = AuditLog(admin_id=current_user.id, action='Edit Student', target_type='Student', target_id=student.id, details=f'Edited student {student.full_name} ({student.index_number})')
-        db.session.add(log)
-        db.session.commit()
-        flash('Student updated successfully!', 'success')
-        return redirect(url_for('admin.manage_students'))
-    form.index_number.data = student.index_number
+        try:
+            student.full_name = form.full_name.data
+            
+            # Find the program by name and update the program_id
+            program = Program.query.filter_by(name=form.program.data).first()
+            if program:
+                student.program_id = program.id
+            else:
+                flash('Program not found!', 'error')
+                return redirect(url_for('admin.edit_student', student_id=student_id))
+            
+            # Find the level by name and update the level_id
+            level = Level.query.filter_by(name=form.level.data).first()
+            if level:
+                student.level_id = level.id
+            else:
+                flash('Level not found!', 'error')
+                return redirect(url_for('admin.edit_student', student_id=student_id))
+            
+            db.session.commit()
+            
+            # Log audit
+            log = AuditLog(
+                admin_id=current_user.id,
+                action='Edit Student',
+                target_type='Student',
+                target_id=student.id,
+                details=f'Edited student {student.full_name} ({student.index_number})'
+            )
+            db.session.add(log)
+            db.session.commit()
+            
+            flash('Student updated successfully!', 'success')
+            return redirect(url_for('admin.manage_students'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating student: {str(e)}', 'error')
+            return redirect(url_for('admin.edit_student', student_id=student_id))
+    
+    # If GET request or validation failed, pre-populate the form
     form.full_name.data = student.full_name
-    form.program.data = student.program
-    form.level.data = student.level
-    return render_template('admin/add_edit_student.html', form=form, editing=True)
-
+    if student.program_id:
+        program = Program.query.get(student.program_id)
+        if program:
+            form.program.data = program.name
+    if student.level_id:
+        level = Level.query.get(student.level_id)
+        if level:
+            form.level.data = level.name
+    
+    return render_template('admin/edit_student.html', form=form, student=student, no_program=not student.program_id)
 @bp.route('/archive_student/<int:student_id>')
 @login_required
 def archive_student(student_id):
@@ -732,44 +921,192 @@ def export_students():
 def import_students():
     if not current_user.is_admin():
         return redirect(url_for('main.index'))
-    file = request.files.get('file')
-    if not file or not file.filename.endswith('.csv'):
-        flash('Please upload a valid CSV file.', 'danger')
+        
+    if 'file' not in request.files:
+        flash('No file selected', 'danger')
         return redirect(url_for('admin.manage_students'))
-    stream = io.StringIO(file.stream.read().decode('utf-8'))
-    reader = csv.DictReader(stream)
-    from app.models import User
-    from werkzeug.security import generate_password_hash
-    for row in reader:
-        # Basic validation
-        index_number = row.get('Index Number')
-        full_name = row.get('Full Name')
-        program = row.get('Program')
-        level = row.get('Level')
-        if not (index_number and full_name and program and level):
-            continue
-        # Create user and student if not exists
-        user = User.query.filter_by(username=index_number).first()
-        if not user:
-            user = User(
-                username=index_number,
-                email=f"{index_number}@student.portal",
-                user_type='student',
-                password_hash=generate_password_hash('changeme123', method='pbkdf2:sha256')
-            )
-            db.session.add(user)
-            db.session.flush()
-            student = Student(
-                user_id=user.id,
-                index_number=index_number,
-                full_name=full_name,
-                program=program,
-                level=level,
-                archived=False
-            )
-            db.session.add(student)
-    db.session.commit()
-    flash('CSV import complete. Default password is "changeme123".', 'success')
+        
+    file = request.files['file']
+    if not file or file.filename == '':
+        flash('No file selected', 'danger')
+        return redirect(url_for('admin.manage_students'))
+        
+    if not file.filename.lower().endswith('.csv'):
+        flash('Only CSV files are allowed', 'danger')
+        return redirect(url_for('admin.manage_students'))
+    
+    try:
+        import io
+        import csv
+        import secrets
+        import string
+        from werkzeug.security import generate_password_hash
+        from sqlalchemy.exc import IntegrityError
+        from app.models import User, Student, Program, Level, AuditLog
+        from app.utils.email import send_welcome_email
+        
+        # Read and parse the CSV file
+        stream = io.StringIO(file.stream.read().decode('utf-8-sig'))  # Handle BOM if present
+        reader = csv.DictReader(stream)
+        
+        # Initialize counters
+        new_students = 0
+        existing_students = 0
+        email_errors = 0
+        skipped_rows = []
+        
+        # Required fields
+        required_fields = ['Index Number', 'Full Name', 'Program', 'Level']
+        
+        # Process each row in the CSV
+        for row_num, row in enumerate(reader, start=2):  # Start at 2 for 1-based row numbers
+            try:
+                # Check for required fields
+                if not all(row.get(field) for field in required_fields):
+                    skipped_rows.append(f"Row {row_num}: Missing required fields")
+                    continue
+                    
+                index_number = row['Index Number'].strip()
+                full_name = row['Full Name'].strip()
+                program_name = row['Program'].strip()
+                level_name = row['Level'].strip()
+                email = row.get('Email', '').strip() or f"{index_number}@student.portal"
+                
+                # Check if user already exists by username or email
+                existing_user = User.query.filter(
+                    (User.username == index_number) | 
+                    (User.email == email)
+                ).first()
+                
+                if existing_user:
+                    existing_students += 1
+                    continue
+                
+                # Start a transaction for this student
+                try:
+                    # Generate a secure random password
+                    alphabet = string.ascii_letters + string.digits + '!@#$%^&*'
+                    while True:
+                        password = ''.join(secrets.choice(alphabet) for _ in range(12))
+                        # Ensure password meets complexity requirements
+                        if (any(c.islower() for c in password) and 
+                            any(c.isupper() for c in password) and 
+                            any(c.isdigit() for c in password)):
+                            break
+                    
+                    # Create user
+                    user = User(
+                        username=index_number,
+                        email=email,
+                        user_type='student',
+                        password_hash=generate_password_hash(password, method='pbkdf2:sha256')
+                    )
+                    db.session.add(user)
+                    db.session.flush()
+                    
+                    # Get or create Program
+                    program = Program.query.filter(
+                        func.lower(Program.name) == func.lower(program_name)
+                    ).first()
+                    
+                    if not program:
+                        program = Program(
+                            name=program_name,
+                            description=f"Auto-created during student import on {datetime.utcnow().date()}",
+                            archived=False
+                        )
+                        db.session.add(program)
+                        db.session.flush()
+                    
+                    # Get or create Level
+                    level = Level.query.filter(
+                        func.lower(Level.name) == func.lower(level_name)
+                    ).first()
+                    
+                    if not level:
+                        level = Level(
+                            name=level_name,
+                            description=f"Level {level_name}",
+                            archived=False
+                        )
+                        db.session.add(level)
+                        db.session.flush()
+                    
+                    # Create student record
+                    student = Student(
+                        user_id=user.id,
+                        index_number=index_number,
+                        full_name=full_name,
+                        program_id=program.id,
+                        level_id=level.id,
+                        archived=False
+                    )
+                    db.session.add(student)
+                    
+                    # Log the import
+                    log = AuditLog(
+                        admin_id=current_user.id,
+                        action='Import Student',
+                        target_type='Student',
+                        target_id=student.id,
+                        details=f'Imported student {full_name} ({index_number}) from CSV'
+                    )
+                    db.session.add(log)
+                    
+                    # Send welcome email
+                    try:
+                        send_welcome_email(user, password)
+                        log.details += ' and sent welcome email'
+                        new_students += 1
+                    except Exception as e:
+                        email_errors += 1
+                        current_app.logger.error(f'Failed to send welcome email to {email}: {str(e)}')
+                        log.details += ' (email sending failed)'
+                    
+                    # Commit the transaction for this student
+                    db.session.commit()
+                    
+                except IntegrityError as e:
+                    db.session.rollback()
+                    if 'duplicate entry' in str(e).lower():
+                        existing_students += 1
+                    else:
+                        current_app.logger.error(f'Error importing student {index_number}: {str(e)}')
+                        skipped_rows.append(f"Row {row_num}: Database error - {str(e)}")
+                
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f'Error processing row {row_num}: {str(e)}')
+                skipped_rows.append(f"Row {row_num}: {str(e)}")
+        
+        # Prepare flash message
+        messages = []
+        
+        if new_students > 0:
+            messages.append(f'Successfully imported {new_students} new students.')
+            if email_errors > 0:
+                messages.append(f'Failed to send {email_errors} welcome emails.')
+        
+        if existing_students > 0:
+            messages.append(f'Skipped {existing_students} existing students (username or email already exists).')
+        
+        if skipped_rows:
+            messages.append(f'Skipped {len(skipped_rows)} rows due to errors.')
+            # Store detailed errors in session to display on a separate page if needed
+            from flask import session
+            session['import_errors'] = skipped_rows[-50:]  # Keep only the last 50 errors
+        
+        if not (new_students or existing_students or skipped_rows):
+            messages.append('No valid student records found in the CSV file. Please check the file format.')
+        
+        # Join messages with line breaks
+        flash('<br>'.join(messages), 'success' if new_students > 0 else 'warning')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error processing import: {str(e)}')
+        flash(f'An error occurred while processing the file: {str(e)}', 'danger')
+    
     return redirect(url_for('admin.manage_students'))
 
 @bp.route('/bulk_students_action', methods=['POST'])
