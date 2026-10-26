@@ -1,2 +1,2 @@
-# PYTHON-PROJECT
-This is where our python project will be held
+# RESULT PORTAL
+Student Result Portal is a web application built with Python, Flask, and MySQL that simplifies academic result management. It allows administrators to manage students, courses, programs, and results, while students can securely view their grades, track academic progress, and download transcripts. It also supports bulk result uploads, GPA calculations, automated email notifications, and role-based access control.
